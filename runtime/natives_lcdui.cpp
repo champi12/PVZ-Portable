@@ -12,6 +12,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "third_party/stb_image.h"
 
+int64_t g_stat_fill_calls, g_stat_fill_px, g_stat_blit_calls, g_stat_blit_px, g_stat_blit_tr_px;
 typedef J_javax_microedition_lcdui_Graphics Gfx;
 typedef J_javax_microedition_lcdui_Image Img;
 
@@ -39,7 +40,7 @@ static bool target_of(JObject* g, Target& t) {
     if (t.cy1 > t.h) t.cy1 = t.h;
     t.tx = gfx->f_tx_I;
     t.ty = gfx->f_ty_I;
-    t.color = 0xFF000000u | (uint32_t)gfx->f_color_I;
+    t.color = PIX_FROM_ARGB(0xFF000000u | (uint32_t)gfx->f_color_I);
     return t.cx0 < t.cx1 && t.cy0 < t.cy1;
 }
 
@@ -60,14 +61,23 @@ static inline void plot(Target& t, int x, int y) {
 void M_javax_microedition_lcdui_Graphics__fillRect__IIII_V(JObject* g, int32_t x, int32_t y, int32_t w, int32_t h) {
     Target t;
     if (!target_of(g, t) || w <= 0 || h <= 0) return;
+    struct Acc { int64_t t0; ~Acc() { g_prof_us[PROF_FILL] += port_time_us() - t0; } } acc{port_time_us()};
     int x0 = x + t.tx, y0 = y + t.ty, x1 = x0 + w, y1 = y0 + h;
+    g_stat_fill_calls++;
     if (x0 < t.cx0) x0 = t.cx0;
     if (y0 < t.cy0) y0 = t.cy0;
     if (x1 > t.cx1) x1 = t.cx1;
     if (y1 > t.cy1) y1 = t.cy1;
+    if (x0 < x1 && y0 < y1) g_stat_fill_px += (x1 - x0) * (y1 - y0);
+    const uint32_t c = t.color;
     for (int yy = y0; yy < y1; yy++) {
-        uint32_t* row = t.pix + yy * t.w;
-        for (int xx = x0; xx < x1; xx++) row[xx] = t.color;
+        uint32_t* p = t.pix + yy * t.w + x0;
+        uint32_t* e = p + (x1 - x0);
+        while (p + 8 <= e) {
+            p[0] = c; p[1] = c; p[2] = c; p[3] = c; p[4] = c; p[5] = c; p[6] = c; p[7] = c;
+            p += 8;
+        }
+        while (p < e) *p++ = c;
     }
 }
 
@@ -153,7 +163,7 @@ static inline void inv_transform(int tr, int u, int v, int w, int h, int& x, int
 }
 
 void port_blit(uint32_t* dst, int dw, int dh, int cx0, int cy0, int cx1, int cy1, const uint32_t* src, int srcw,
-               int sx, int sy, int w, int h, int tr, int x, int y) {
+               int sx, int sy, int w, int h, int tr, int x, int y, bool opaque) {
     int ow = (tr & 4) ? h : w, oh = (tr & 4) ? w : h;
     int x0 = x, y0 = y, x1 = x + ow, y1 = y + oh;
     if (cx0 < 0) cx0 = 0;
@@ -165,6 +175,14 @@ void port_blit(uint32_t* dst, int dw, int dh, int cx0, int cy0, int cx1, int cy1
     if (x1 > cx1) x1 = cx1;
     if (y1 > cy1) y1 = cy1;
     if (x0 >= x1 || y0 >= y1) return;
+    g_stat_blit_calls++;
+    g_stat_blit_px += (x1 - x0) * (y1 - y0);
+    if (tr != 0) g_stat_blit_tr_px += (x1 - x0) * (y1 - y0);
+    if (tr == 0 && opaque) {
+        for (int yy = y0; yy < y1; yy++)
+            memcpy(dst + yy * dw + x0, src + (sy + yy - y) * srcw + sx + (x0 - x), (x1 - x0) * 4);
+        return;
+    }
     if (tr == 0 || tr == 2) {
         for (int yy = y0; yy < y1; yy++) {
             const uint32_t* s = src + (sy + yy - y) * srcw + sx;
@@ -192,8 +210,10 @@ void M_javax_microedition_lcdui_Graphics__blit__AIIIIIIIII_V(JObject* g, JObject
                                                              int32_t y) {
     Target t;
     if (!target_of(g, t)) return;
+    int64_t t0 = port_time_us();
+    struct Acc { int64_t t0; ~Acc() { g_prof_us[PROF_BLIT] += port_time_us() - t0; } } acc{t0};
     port_blit(t.pix, t.w, t.h, t.cx0, t.cy0, t.cx1, t.cy1, jadata<uint32_t>(JNN(src)), srcw, sx, sy, w, h, tr,
-              x + t.tx, y + t.ty);
+              x + t.tx, y + t.ty, (src->gc_mark & JMARK_OPAQUE) != 0);
 }
 
 void M_javax_microedition_lcdui_Graphics__transformRegion__AIIIIIIIAIAI_V(JObject* src, int32_t srcw, int32_t sx,
@@ -229,7 +249,7 @@ void M_javax_microedition_lcdui_Graphics__drawRGB__AIIIIIIIZ_V(JObject* g, JObje
             if (xx < t.cx0 || xx >= t.cx1) continue;
             int i = off + v * scan + u;
             if (i < 0 || i >= len) jthrow_aioobe(i);
-            uint32_t p = s[i];
+            uint32_t p = PIX_FROM_ARGB(s[i]);
             uint32_t* d = &t.pix[yy * t.w + xx];
             *d = alpha ? blend(*d, p) : (p | 0xFF000000u);
         }
@@ -244,9 +264,16 @@ JObject* M_javax_microedition_lcdui_Image__decode__ABIIAI_AI(JObject* data, int3
     if (px == nullptr) return nullptr;
     JObject* out = jnewarray(&AC_AI, w * h);
     uint32_t* o = jadata<uint32_t>(out);
+    bool opaque = true;
+    for (int i = 0; i < w * h && opaque; i++) opaque = px[i * 4 + 3] == 255;
+    if (opaque) out->gc_mark |= JMARK_OPAQUE;
     for (int i = 0; i < w * h; i++) {
         const unsigned char* p = px + i * 4;
+#ifdef PIX_ABGR
+        o[i] = ((uint32_t)p[3] << 24) | ((uint32_t)p[2] << 16) | ((uint32_t)p[1] << 8) | p[0];
+#else
         o[i] = ((uint32_t)p[3] << 24) | ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+#endif
     }
     stbi_image_free(px);
     jaset<int32_t>(wh, 0, w);
@@ -266,4 +293,16 @@ int32_t M_javax_microedition_lcdui_Display__pollEvents__AI_I(JObject* buf) {
 void M_javax_microedition_lcdui_Display__present__AIII_V(JObject* pixels, int32_t w, int32_t h) {
     if (w != SCREEN_W || h != SCREEN_H) return;
     port_present(jadata<uint32_t>(JNN(pixels)));
+}
+
+// Converts between the ARGB layout seen by Java code and the native pixel layout.
+void M_javax_microedition_lcdui_Image__swapToNative__AIII_V(JObject* arr, int32_t off, int32_t len) {
+#ifdef PIX_ABGR
+    JNN(arr);
+    if (off < 0 || len < 0 || off + len > ((JArray*)arr)->length) jthrow_aioobe(off);
+    uint32_t* p = jadata<uint32_t>(arr) + off;
+    for (int32_t i = 0; i < len; i++) p[i] = PIX_FROM_ARGB(p[i]);
+#else
+    (void)arr; (void)off; (void)len;
+#endif
 }

@@ -3,3 +3,4 @@
 cc.paint(Ljavax/microedition/lcdui/Graphics;)V
 ce.a(Ljava/lang/String;Ljava/lang/String;ZJ)V
 bi.b(Ljavax/microedition/lcdui/Graphics;)V
+t.b()V

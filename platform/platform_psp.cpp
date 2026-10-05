@@ -6,6 +6,7 @@
 #include <pspdebug.h>
 #include <pspdisplay.h>
 #include <pspge.h>
+#include <pspgu.h>
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
 #include <psppower.h>
@@ -39,11 +40,20 @@ static int callback_thread(SceSize, void*) {
     return 0;
 }
 
-// ---- display ----
+// ---- display (GE) ----
+//
+// Frames are drawn by the PSP's graphics engine: the game canvas (in main memory, native ABGR
+// layout) is used directly as a texture and scaled to 480x272 with bilinear filtering, so the
+// CPU never touches the framebuffer.
 
 static const int FB_STRIDE = 512;
-static uint32_t* g_fb[2];
-static int g_back = 1;
+static unsigned int __attribute__((aligned(16))) g_list[16384];
+static void* g_draw_fb;  // VRAM offset of the buffer being drawn
+
+struct TexVertex {
+    float u, v;
+    float x, y, z;
+};
 
 void platform_init() {
     int th = sceKernelCreateThread("cb_thread", callback_thread, 0x11, 0xFA0, PSP_THREAD_ATTR_USER, nullptr);
@@ -51,13 +61,25 @@ void platform_init() {
 
     scePowerSetClockFrequency(333, 333, 166);
 
-    // Two 512-stride 32-bit framebuffers at the start of VRAM (uncached mirror).
-    uint32_t* vram = (uint32_t*)(0x40000000 | (uintptr_t)sceGeEdramGetAddr());
-    g_fb[0] = vram;
-    g_fb[1] = vram + FB_STRIDE * SCREEN_H;
-    memset(g_fb[0], 0, FB_STRIDE * SCREEN_H * 4 * 2);
-    sceDisplaySetMode(0, SCREEN_W, SCREEN_H);
-    sceDisplaySetFrameBuf(g_fb[0], FB_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTFRAME);
+    // Two 512-stride 32-bit framebuffers at the start of VRAM.
+    sceGuInit();
+    sceGuStart(GU_DIRECT, g_list);
+    sceGuDrawBuffer(GU_PSM_8888, (void*)0, FB_STRIDE);
+    sceGuDispBuffer(SCREEN_W, SCREEN_H, (void*)(FB_STRIDE * SCREEN_H * 4), FB_STRIDE);
+    sceGuOffset(2048 - SCREEN_W / 2, 2048 - SCREEN_H / 2);
+    sceGuViewport(2048, 2048, SCREEN_W, SCREEN_H);
+    sceGuScissor(0, 0, SCREEN_W, SCREEN_H);
+    sceGuEnable(GU_SCISSOR_TEST);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuEnable(GU_TEXTURE_2D);
+    sceGuClearColor(0xFF000000);
+    sceGuClear(GU_COLOR_BUFFER_BIT);
+    sceGuFinish();
+    sceGuSync(0, 0);
+    sceDisplayWaitVblankStart();
+    sceGuDisplay(GU_TRUE);
+    g_draw_fb = (void*)0;
 
     sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
@@ -86,9 +108,94 @@ int64_t platform_time_ms() {
     return (int64_t)(sceKernelGetSystemTimeWide() / 1000);
 }
 
+int64_t platform_time_us() {
+    return (int64_t)sceKernelGetSystemTimeWide();
+}
+
 void platform_sleep_ms(int ms) {
     if (ms > 0) sceKernelDelayThread(ms * 1000);
 }
+
+#ifdef PVZ_PROFILE
+// Test builds: "autoplay.txt" next to the EBOOT feeds scripted input (same format as the PC
+// build: "<ms> down X Y", "<ms> up X Y", "<ms> press CROSS", "<ms> shot NAME"...) and
+// "shot" writes the current frame as a raw 480x272 ARGB file.
+#include <vector>
+struct ScriptCmd {
+    int64_t t;
+    char cmd[16];
+    char arg[32];
+    int x, y;
+};
+static std::vector<ScriptCmd> g_script;
+static size_t g_script_pos;
+static PadState g_script_pad;
+static bool g_script_loaded;
+static const uint32_t* g_last_frame;
+static void capture_frame();
+
+static uint32_t button_by_name(const char* n) {
+    static const struct { const char* n; uint32_t b; } T[] = {
+        {"UP", PAD_UP}, {"DOWN", PAD_DOWN}, {"LEFT", PAD_LEFT}, {"RIGHT", PAD_RIGHT}, {"CROSS", PAD_CROSS},
+        {"CIRCLE", PAD_CIRCLE}, {"SQUARE", PAD_SQUARE}, {"TRIANGLE", PAD_TRIANGLE}, {"L", PAD_L}, {"R", PAD_R},
+        {"START", PAD_START}, {"SELECT", PAD_SELECT},
+    };
+    for (auto& e : T)
+        if (!strcmp(n, e.n)) return e.b;
+    return 0;
+}
+
+static void script_step(PadState* pad) {
+    if (!g_script_loaded) {
+        g_script_loaded = true;
+        FILE* f = fopen("autoplay.txt", "r");
+        if (f) {
+            char line[128];
+            while (fgets(line, sizeof line, f)) {
+                ScriptCmd c;
+                memset(&c, 0, sizeof c);
+                long long t;
+                if (sscanf(line, "%lld %15s", &t, c.cmd) < 2) continue;
+                c.t = t;
+                if (sscanf(line, "%lld %15s %d %d", &t, c.cmd, &c.x, &c.y) < 4) sscanf(line, "%lld %15s %31s", &t, c.cmd, c.arg);
+                g_script.push_back(c);
+            }
+            fclose(f);
+        }
+    }
+    if (g_script.empty()) return;
+    while (g_script_pos < g_script.size() && g_script[g_script_pos].t <= platform_time_ms()) {
+        ScriptCmd& c = g_script[g_script_pos++];
+        if (!strcmp(c.cmd, "down") || !strcmp(c.cmd, "up") || !strcmp(c.cmd, "move")) {
+            g_script_pad.mouse_valid = true;
+            g_script_pad.mouse_x = c.x;
+            g_script_pad.mouse_y = c.y;
+            if (!strcmp(c.cmd, "down")) g_script_pad.mouse_down = true;
+            if (!strcmp(c.cmd, "up")) g_script_pad.mouse_down = false;
+        } else if (!strcmp(c.cmd, "press")) {
+            g_script_pad.buttons |= button_by_name(c.arg);
+        } else if (!strcmp(c.cmd, "release")) {
+            g_script_pad.buttons &= ~button_by_name(c.arg);
+        } else if (!strcmp(c.cmd, "shot") && g_last_frame) {
+            capture_frame();
+            char name[64];
+            snprintf(name, sizeof name, "%s.raw", c.arg);
+            FILE* f = fopen(name, "wb");
+            if (f) {
+                fwrite(g_last_frame, 4, SCREEN_W * SCREEN_H, f);
+                fclose(f);
+            }
+        } else if (!strcmp(c.cmd, "quit")) {
+            g_quit = true;
+        }
+    }
+    pad->buttons |= g_script_pad.buttons;
+    pad->mouse_valid = g_script_pad.mouse_valid;
+    pad->mouse_x = g_script_pad.mouse_x;
+    pad->mouse_y = g_script_pad.mouse_y;
+    pad->mouse_down = g_script_pad.mouse_down;
+}
+#endif
 
 void platform_read_pad(PadState* pad) {
     memset(pad, 0, sizeof *pad);
@@ -104,25 +211,81 @@ void platform_read_pad(PadState* pad) {
         if (d.Buttons & m.psp) pad->buttons |= m.b;
     pad->ax = (int)d.Lx - 128;
     pad->ay = (int)d.Ly - 128;
+#ifdef PVZ_PROFILE
+    script_step(pad);
+#endif
     pad->quit = g_quit;
 }
 
-void platform_present(const uint32_t* argb) {
-    uint32_t* dst = g_fb[g_back];
-    for (int y = 0; y < SCREEN_H; y++) {
-        const uint32_t* s = argb + y * SCREEN_W;
-        uint32_t* d = dst + y * FB_STRIDE;
-        for (int x = 0; x < SCREEN_W; x++) {
-            uint32_t p = s[x];
-            // ARGB -> ABGR (the PSP framebuffer stores R in the low byte)
-            d[x] = 0xFF000000u | ((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF);
-        }
-    }
-    sceDisplaySetFrameBuf(dst, FB_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTFRAME);
-    g_back ^= 1;
-    // Let the flip happen before the next frame is drawn into the other buffer.
-    sceDisplayWaitVblankStart();
+static void draw_sprite(float u0, float v0, float u1, float v1, float x0, float y0, float x1, float y1) {
+    TexVertex* v = (TexVertex*)sceGuGetMemory(2 * sizeof(TexVertex));
+    v[0].u = u0; v[0].v = v0; v[0].x = x0; v[0].y = y0; v[0].z = 0;
+    v[1].u = u1; v[1].v = v1; v[1].x = x1; v[1].y = y1; v[1].z = 0;
+    sceGuDrawArray(GU_SPRITES, GU_TEXTURE_32BITF | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, nullptr, v);
 }
+
+#ifdef PVZ_PROFILE
+static void remember_frame();
+#endif
+
+bool platform_present_canvas(const uint32_t* pixels, int stride, int view_w, int h, const PresentCursor* cursor) {
+    sceKernelDcacheWritebackRange(pixels, stride * h * 4);
+    sceGuStart(GU_DIRECT, g_list);
+    sceGuTexMode(GU_PSM_8888, 0, 0, 0);
+    sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
+    sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+    sceGuDisable(GU_BLEND);
+    bool scaled = view_w != SCREEN_W || h != SCREEN_H;
+    sceGuTexFilter(scaled ? GU_LINEAR : GU_NEAREST, scaled ? GU_LINEAR : GU_NEAREST);
+    // Textures are at most 512 texels wide: draw the canvas in vertical slices that start on
+    // 16-byte boundaries. Each slice keeps the whole canvas row stride, so bilinear filtering
+    // across slice borders reads the real neighbouring pixels.
+    const int SLICE = 128;
+    float sx = (float)SCREEN_W / view_w, sy = (float)SCREEN_H / h;
+    for (int x0 = 0; x0 < view_w; x0 += SLICE) {
+        int w = view_w - x0 < SLICE ? view_w - x0 : SLICE;
+        sceGuTexImage(0, 512, 512, stride, pixels + x0);
+        sceGuTexFlush();
+        draw_sprite(0, 0, (float)w, (float)h, x0 * sx, 0, (x0 + w) * sx, h * sy);
+    }
+    if (cursor && cursor->visible) {
+        sceKernelDcacheWritebackRange(cursor->image, CURSOR_W * CURSOR_H * 4);
+        sceGuEnable(GU_BLEND);
+        sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+        sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGBA);
+        sceGuTexFilter(GU_NEAREST, GU_NEAREST);
+        sceGuTexImage(0, CURSOR_W, CURSOR_H, CURSOR_W, cursor->image);
+        sceGuTexFlush();
+        draw_sprite(0, 0, CURSOR_W, CURSOR_H, cursor->x, cursor->y, cursor->x + CURSOR_W, cursor->y + CURSOR_H);
+    }
+    sceGuFinish();
+    sceGuSync(0, 0);
+#ifdef PVZ_PROFILE
+    remember_frame();
+#endif
+    sceDisplayWaitVblankStart();
+    g_draw_fb = sceGuSwapBuffers();
+    return true;
+}
+
+void platform_present(const uint32_t* pixels) {
+    platform_present_canvas(pixels, SCREEN_W, SCREEN_W, SCREEN_H, nullptr);
+}
+
+#ifdef PVZ_PROFILE
+// The last frame shown, read back from VRAM for autoplay screenshots.
+static uint32_t g_shot[SCREEN_W * SCREEN_H];
+static void* g_shown_fb;
+static void remember_frame() {
+    g_shown_fb = g_draw_fb;
+    g_last_frame = g_shot;
+}
+static void capture_frame() {
+    const uint32_t* fb = (const uint32_t*)(0x44000000 | (uintptr_t)g_shown_fb);
+    for (int y = 0; y < SCREEN_H; y++)
+        for (int x = 0; x < SCREEN_W; x++) g_shot[y * SCREEN_W + x] = PIX_TO_ARGB(fb[y * FB_STRIDE + x]);
+}
+#endif
 
 // ---- saves ----
 

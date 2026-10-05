@@ -26,9 +26,10 @@ static int g_dpad_hold_ms = 0;
 static bool g_cursor_visible = true;
 static int g_idle_ms = 0;
 
-static uint32_t g_frame[SCREEN_W * SCREEN_H];
-static uint32_t g_out[SCREEN_W * SCREEN_H];
-static bool g_have_frame = false;
+static int64_t g_prof_start = 0, g_prof_slept = 0;
+int64_t g_prof_us[PROF_COUNT];
+
+int64_t port_time_us() { return platform_time_us(); }
 
 static void push(int type, int a, int b) {
     if (g_queue_len >= QUEUE_MAX) return;
@@ -165,39 +166,147 @@ static const char* CURSOR[] = {
     "        ##  ",
 };
 
+// Cursor bitmap in the native pixel format (CURSOR_W x CURSOR_H, transparent background).
+static uint32_t g_cursor_img[2][CURSOR_W * CURSOR_H] __attribute__((aligned(16)));
+
+static void build_cursor() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    for (int k = 0; k < 2; k++) {
+        uint32_t fill = k ? PIX_FROM_ARGB(0xFFFFE070u) : 0xFFFFFFFFu;
+        for (int y = 0; y < CURSOR_H; y++)
+            for (int x = 0; x < CURSOR_W; x++) {
+                char c = (y < 19 && x < 12) ? CURSOR[y][x] : ' ';
+                g_cursor_img[k][y * CURSOR_W + x] = c == '#' ? 0xFF000000u : c == '.' ? fill : 0;
+            }
+    }
+}
+
+// The last frame: either a game canvas (scaled to the screen) or a ready screen image.
+static const uint32_t* g_canvas = nullptr;
+static int g_canvas_stride = 0, g_canvas_view_w = 0, g_canvas_h = 0;
+static bool g_have_frame = false;
+static bool g_canvas_presented = false;
+static uint32_t g_out[SCREEN_W * SCREEN_H];
+
+// Bilinear resample of a view_w x h canvas region to SCREEN_W x SCREEN_H (fixed point 1/128).
+static void scale_canvas(uint32_t* d, const uint32_t* s, int stride, int view_w, int h) {
+    if (view_w == SCREEN_W && h == SCREEN_H) {
+        for (int y = 0; y < SCREEN_H; y++) memcpy(d + y * SCREEN_W, s + y * stride, SCREEN_W * 4);
+        return;
+    }
+    static int xs[SCREEN_W], xw[SCREEN_W];
+    static int cached_w = -1;
+    if (cached_w != view_w) {
+        for (int x = 0; x < SCREEN_W; x++) {
+            int fx = ((x * 2 + 1) * view_w * 128) / (SCREEN_W * 2) - 64;
+            if (fx < 0) fx = 0;
+            xs[x] = fx >> 7;
+            xw[x] = fx & 127;
+            if (xs[x] >= view_w - 1) {
+                xs[x] = view_w - 2;
+                xw[x] = 128;
+            }
+        }
+        cached_w = view_w;
+    }
+    for (int y = 0; y < SCREEN_H; y++) {
+        int fy = ((y * 2 + 1) * h * 128) / (SCREEN_H * 2) - 64;
+        if (fy < 0) fy = 0;
+        int y0 = fy >> 7, wy = fy & 127;
+        int y1 = y0 + 1 < h ? y0 + 1 : y0;
+        const uint32_t* r0 = s + y0 * stride;
+        const uint32_t* r1 = s + y1 * stride;
+        uint32_t* o = d + y * SCREEN_W;
+        for (int x = 0; x < SCREEN_W; x++) {
+            int sx = xs[x], wx = xw[x];
+            uint32_t a = r0[sx], b = r0[sx + 1], c = r1[sx], e = r1[sx + 1];
+            uint32_t t_rb = (((a & 0xFF00FF) * (128 - wx) + (b & 0xFF00FF) * wx) >> 7) & 0xFF00FF;
+            uint32_t t_g = (((a & 0x00FF00) * (128 - wx) + (b & 0x00FF00) * wx) >> 7) & 0x00FF00;
+            uint32_t b_rb = (((c & 0xFF00FF) * (128 - wx) + (e & 0xFF00FF) * wx) >> 7) & 0xFF00FF;
+            uint32_t b_g = (((c & 0x00FF00) * (128 - wx) + (e & 0x00FF00) * wx) >> 7) & 0x00FF00;
+            uint32_t rb = ((t_rb * (128 - wy) + b_rb * wy) >> 7) & 0xFF00FF;
+            uint32_t g = ((t_g * (128 - wy) + b_g * wy) >> 7) & 0x00FF00;
+            o[x] = 0xFF000000u | rb | g;
+        }
+    }
+}
+
 static int64_t g_last_present = 0;
 
 static void compose_and_show() {
     g_last_present = platform_time_ms();
-    memcpy(g_out, g_frame, sizeof g_out);
-    if (g_cursor_visible && game_wants_cursor()) {
-        int x0 = (int)g_cx, y0 = (int)g_cy;
-        for (int y = 0; y < 19; y++) {
-            int yy = y0 + y;
+    build_cursor();
+    bool cursor = g_cursor_visible && game_wants_cursor();
+    PresentCursor pc = {cursor, (int)g_cx, (int)g_cy, g_cursor_img[g_ptr_down ? 1 : 0]};
+    // Fast path: the backend scales the canvas itself (PSP: on the GPU).
+    if (platform_present_canvas(g_canvas, g_canvas_stride, g_canvas_view_w, g_canvas_h, &pc)) return;
+    scale_canvas(g_out, g_canvas, g_canvas_stride, g_canvas_view_w, g_canvas_h);
+    if (cursor) {
+        for (int y = 0; y < CURSOR_H; y++) {
+            int yy = pc.y + y;
             if (yy < 0 || yy >= SCREEN_H) continue;
-            for (int x = 0; x < 12; x++) {
-                int xx = x0 + x;
-                if (xx < 0 || xx >= SCREEN_W) continue;
-                char c = CURSOR[y][x];
-                if (c == '#') g_out[yy * SCREEN_W + xx] = 0xFF000000u;
-                else if (c == '.') g_out[yy * SCREEN_W + xx] = g_ptr_down ? 0xFFFFE070u : 0xFFFFFFFFu;
+            for (int x = 0; x < CURSOR_W; x++) {
+                int xx = pc.x + x;
+                uint32_t p = pc.image[y * CURSOR_W + x];
+                if (xx >= 0 && xx < SCREEN_W && p) g_out[yy * SCREEN_W + xx] = p;
             }
         }
     }
     platform_present(g_out);
 }
 
-void port_present(uint32_t* pixels) {
-    memcpy(g_frame, pixels, sizeof g_frame);
+void port_present_canvas(const uint32_t* pixels, int stride, int view_w, int h) {
+    int64_t t0 = port_time_us();
+    g_canvas = pixels;
+    g_canvas_stride = stride;
+    g_canvas_view_w = view_w;
+    g_canvas_h = h;
     g_have_frame = true;
+    g_canvas_presented = true;
     compose_and_show();
+    g_prof_us[PROF_PRESENT] += port_time_us() - t0;
 }
 
-// Thread.sleep(): keep the cursor responsive while the game waits between frames.
-// The game logic advances once per frame, so holding L halves the frame delay (x2 speed).
+void port_present(uint32_t* pixels) {
+    // Display.present() after Canvas.paint(): once the game presents its own canvas, the MIDP
+    // screen image is not used any more (a skipped paint keeps the previous frame on screen).
+    if (g_canvas_presented) return;
+    port_present_canvas(pixels, SCREEN_W, SCREEN_W, SCREEN_H);
+    g_canvas_presented = false;
+}
+
+// Prints the share of time the game spends working (not sleeping) every 5 s when profiling
+// is enabled (PVZ_PROFILE=1 on PC; built in with -DPVZ_PROFILE on the PSP).
+static void profile(int64_t slept) {
+#ifndef PVZ_PROFILE
+    static int enabled = -1;
+    if (enabled < 0) enabled = getenv("PVZ_PROFILE") != nullptr;
+    if (!enabled) return;
+#endif
+    int64_t now = platform_time_ms();
+    if (!g_prof_start) g_prof_start = now;
+    g_prof_slept += slept;
+    if (now - g_prof_start >= 5000) {
+        extern int64_t g_midi_mix_us;
+        printf("[profile] cpu busy %d%% (heap %u KB) logic %d render %d (blit %d fill %d) present %d audio %d ms\n",
+               (int)(100 - g_prof_slept * 100 / (now - g_prof_start)), (unsigned)(gc_heap_bytes() / 1024),
+               (int)(g_prof_us[PROF_LOGIC] / 1000), (int)(g_prof_us[PROF_RENDER] / 1000),
+               (int)(g_prof_us[PROF_BLIT] / 1000), (int)(g_prof_us[PROF_FILL] / 1000), (int)(g_prof_us[PROF_PRESENT] / 1000),
+               (int)(g_midi_mix_us / 1000));
+        g_midi_mix_us = 0;
+        memset(g_prof_us, 0, sizeof g_prof_us);
+        fflush(stdout);
+        g_prof_start = now;
+        g_prof_slept = 0;
+    }
+}
+
 void port_sleep(int ms) {
     if (g_prev_buttons & PAD_L) ms /= 2;
-    int64_t end = platform_time_ms() + ms;
+    int64_t begin = platform_time_ms();
+    int64_t end = begin + ms;
     for (;;) {
         int64_t now = platform_time_ms();
         int64_t left = end - now;
@@ -210,6 +319,10 @@ void port_sleep(int ms) {
             compose_and_show();
             continue;
         }
+        int64_t t0 = platform_time_ms();
         platform_sleep_ms(left > 8 ? 8 : (int)left);
+        profile(platform_time_ms() - t0);
     }
+    profile(0);
+    (void)begin;
 }

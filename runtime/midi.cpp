@@ -7,6 +7,7 @@
 #include "platform.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -45,8 +46,8 @@ struct Player {
     bool playing = false;
     Song song;
     size_t pos = 0;
-    double tick = 0;
-    double ticks_per_sample = 0;
+    uint64_t tick = 0;              // song position in ticks, 32.32 fixed point
+    uint64_t ticks_per_sample = 0;  // 32.32 fixed point
     int loops_left = 0;  // -1 = forever
     float volume = 1.0f;
     Channel ch[16];
@@ -59,7 +60,8 @@ struct Voice {
     int player, ch, note;
     VoiceKind kind;
     float freq;
-    double phase, phase2, phase3;
+    uint32_t phase, phase2, phase3;  // 32-bit fixed-point oscillator phases
+    float dec2;                      // secondary exponential decay (bells, snare tone)
     float amp;
     float env;
     int stage;      // 0 attack, 1 decay/sustain, 2 release
@@ -74,6 +76,19 @@ struct Voice {
     float sweep;    // drums: pitch sweep state
     float ks[KS_MAX];  // must stay last: note_on() clears everything before it
 };
+
+// Single precision / fixed point only: the PSP has no double-precision FPU.
+const int SIN_BITS = 12;
+float g_sin[1 << SIN_BITS];
+const float PHASE_PER_HZ = 4294967296.0f / SAMPLE_RATE;
+
+inline uint32_t phase_inc(float hz) { return (uint32_t)(int64_t)(hz * PHASE_PER_HZ); }
+inline float sin_ph(uint32_t ph) { return g_sin[ph >> (32 - SIN_BITS)]; }
+inline float saw_ph(uint32_t ph) { return (float)(int32_t)ph * (1.0f / 2147483648.0f); }
+
+void init_tables() {
+    for (int i = 0; i < (1 << SIN_BITS); i++) g_sin[i] = sinf(i * 6.2831853f / (1 << SIN_BITS));
+}
 
 Player g_players[MAX_PLAYERS];
 Voice g_voices[MAX_VOICES];
@@ -377,7 +392,7 @@ void handle_event(int pi, const Event& e) {
             break;
         }
         case EV_TEMPO:
-            pl.ticks_per_sample = (double)pl.song.tpb * 1e6 / ((double)e.tempo * SAMPLE_RATE);
+            pl.ticks_per_sample = ((uint64_t)pl.song.tpb * 1000000ull << 32) / ((uint64_t)e.tempo * SAMPLE_RATE);
             break;
         default:
             break;
@@ -392,24 +407,25 @@ void kill_player_voices(int pi) {
 void reset_player(Player& pl) {
     pl.pos = 0;
     pl.tick = 0;
-    pl.ticks_per_sample = (double)pl.song.tpb * 1e6 / (500000.0 * SAMPLE_RATE);
+    pl.ticks_per_sample = ((uint64_t)pl.song.tpb * 1000000ull << 32) / (500000ull * SAMPLE_RATE);
     for (Channel& c : pl.ch) c = Channel();
 }
 
-// Advances the sequencer of player pi by one sample.
-void sequence(int pi) {
+// Advances the sequencer of player pi by n samples (events are applied at block start).
+void sequence(int pi, int n) {
     Player& pl = g_players[pi];
     std::vector<Event>& ev = pl.song.events;
-    while (pl.playing && pl.pos < ev.size() && ev[pl.pos].tick <= pl.tick) {
+    while (pl.playing && pl.pos < ev.size() && ((uint64_t)ev[pl.pos].tick << 32) <= pl.tick) {
         const Event& e = ev[pl.pos++];
         if (e.type == EV_END) {
             if (pl.loops_left < 0 || pl.loops_left > 1) {
                 if (pl.loops_left > 0) pl.loops_left--;
                 for (Voice& v : g_voices)
                     if (v.active && v.player == pi) v.stage = 2;
-                double over = pl.tick - e.tick;
+                uint64_t end = (uint64_t)e.tick << 32;
+                uint64_t over = pl.tick > end ? pl.tick - end : 0;
                 reset_player(pl);
-                pl.tick = over > 0 ? over : 0;
+                pl.tick = over;
             } else {
                 pl.playing = false;
             }
@@ -417,157 +433,218 @@ void sequence(int pi) {
         }
         handle_event(pi, e);
     }
-    pl.tick += pl.ticks_per_sample;
+    pl.tick += pl.ticks_per_sample * (uint64_t)n;
 }
 
-inline float voice_sample(Voice& v, float freq_mul) {
+const int BLOCK = 64;
+
+// Renders n samples of voice v (oscillator times envelope) into buf.
+void render_block(Voice& v, float freq_mul, float* buf, int n) {
     float f = v.freq * freq_mul;
-    float out = 0;
+    // f < SAMPLE_RATE / 2, so the increment fits in 31 bits (a single cvt.w.s on the PSP).
+    uint32_t inc = (uint32_t)(int32_t)(f * PHASE_PER_HZ);
     switch (v.kind) {
         case VK_PLUCK: {
-            int i = v.ks_pos, j = i + 1 == v.ks_len ? 0 : i + 1;
-            out = v.ks[i];
-            v.ks[i] = (v.ks[i] + v.ks[j]) * 0.5f * v.ks_damp;
-            v.ks_pos = j;
+            int i = v.ks_pos, len = v.ks_len;
+            float damp = 0.5f * v.ks_damp;
+            for (int k = 0; k < n; k++) {
+                int j = i + 1 == len ? 0 : i + 1;
+                float a = v.ks[i];
+                buf[k] = a;
+                v.ks[i] = (a + v.ks[j]) * damp;
+                i = j;
+            }
+            v.ks_pos = i;
             break;
         }
         case VK_BASS: {
-            v.phase += f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            float s = sinf((float)(v.phase * 2 * M_PI));
-            float tri = 4.0f * fabsf((float)v.phase - 0.5f) - 1.0f;
-            out = 0.6f * s + 0.4f * tri;
+            uint32_t ph = v.phase;
+            for (int k = 0; k < n; k++) {
+                ph += inc;
+                float tri = 2.0f * fabsf(saw_ph(ph)) - 1.0f;
+                buf[k] = 0.6f * sin_ph(ph) + 0.4f * tri;
+            }
+            v.phase = ph;
             break;
         }
         case VK_PAD: {
-            v.phase += f * 1.003f / SAMPLE_RATE;
-            v.phase2 += f * 0.997f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            v.phase2 -= floor(v.phase2);
-            float a = 2.0f * (float)v.phase - 1.0f, b = 2.0f * (float)v.phase2 - 1.0f;
-            float raw = 0.5f * (a + b);
-            v.lp += (raw - v.lp) * 0.08f;  // soften the saws
-            out = v.lp * 1.6f;
+            uint32_t p1 = v.phase, p2 = v.phase2;
+            uint32_t i1 = (uint32_t)(int32_t)(f * 1.003f * PHASE_PER_HZ), i2 = (uint32_t)(int32_t)(f * 0.997f * PHASE_PER_HZ);
+            float lp = v.lp;
+            for (int k = 0; k < n; k++) {
+                p1 += i1;
+                p2 += i2;
+                float raw = 0.5f * (saw_ph(p1) + saw_ph(p2));
+                lp += (raw - lp) * 0.08f;  // soften the saws
+                buf[k] = lp * 1.6f;
+            }
+            v.phase = p1;
+            v.phase2 = p2;
+            v.lp = lp;
             break;
         }
         case VK_LEAD: {
-            v.phase += f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            float sq = v.phase < 0.5 ? 1.0f : -1.0f;
-            v.lp += (sq - v.lp) * 0.15f;
-            out = v.lp;
+            uint32_t ph = v.phase;
+            float lp = v.lp;
+            for (int k = 0; k < n; k++) {
+                ph += inc;
+                float sq = (int32_t)ph >= 0 ? 1.0f : -1.0f;
+                lp += (sq - lp) * 0.15f;
+                buf[k] = lp;
+            }
+            v.phase = ph;
+            v.lp = lp;
             break;
         }
         case VK_ORGAN: {
-            v.phase += f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            float p = (float)(v.phase * 2 * M_PI);
-            out = 0.6f * sinf(p) + 0.3f * sinf(2 * p) + 0.15f * sinf(4 * p);
+            uint32_t ph = v.phase;
+            for (int k = 0; k < n; k++) {
+                ph += inc;
+                buf[k] = 0.6f * sin_ph(ph) + 0.3f * sin_ph(ph * 2) + 0.15f * sin_ph(ph * 4);
+            }
+            v.phase = ph;
             break;
         }
         case VK_BELL: {
-            v.phase += f / SAMPLE_RATE;
-            v.phase2 += f * 2.76f / SAMPLE_RATE;
-            v.phase3 += f * 5.4f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            v.phase2 -= floor(v.phase2);
-            v.phase3 -= floor(v.phase3);
-            float d2 = expf(-v.age / (0.25f * SAMPLE_RATE));
-            out = sinf((float)(v.phase * 2 * M_PI)) + 0.4f * d2 * sinf((float)(v.phase2 * 2 * M_PI)) +
-                  0.2f * d2 * d2 * sinf((float)(v.phase3 * 2 * M_PI));
-            out *= 0.7f;
+            uint32_t p1 = v.phase, p2 = v.phase2, p3 = v.phase3;
+            uint32_t i2 = (uint32_t)(int32_t)(f * 2.76f * PHASE_PER_HZ), i3 = (uint32_t)(int32_t)(f * 5.4f * PHASE_PER_HZ);
+            if (i3 >= 0x7FFFFFFFu) i3 = 0;
+            if (v.age == 0) v.dec2 = 1.0f;
+            float d2 = v.dec2;
+            for (int k = 0; k < n; k++) {
+                p1 += inc;
+                p2 += i2;
+                p3 += i3;
+                d2 *= 0.99990930f;  // e^(-1 / (0.25 s))
+                buf[k] = (sin_ph(p1) + 0.4f * d2 * sin_ph(p2) + 0.2f * d2 * d2 * sin_ph(p3)) * 0.7f;
+            }
+            v.phase = p1;
+            v.phase2 = p2;
+            v.phase3 = p3;
+            v.dec2 = d2;
             break;
         }
         case VK_KICK: {
-            v.sweep *= 0.9993f;
-            float fk = 45.0f + 110.0f * v.sweep;
-            v.phase += fk / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            out = sinf((float)(v.phase * 2 * M_PI));
+            uint32_t ph = v.phase;
+            float sw = v.sweep;
+            for (int k = 0; k < n; k++) {
+                sw *= 0.9993f;
+                ph += (uint32_t)(int32_t)((45.0f + 110.0f * sw) * PHASE_PER_HZ);
+                buf[k] = sin_ph(ph);
+            }
+            v.phase = ph;
+            v.sweep = sw;
             break;
         }
         case VK_SNARE: {
-            v.phase += 190.0f / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            float n = frand(v.noise);
-            float tone = sinf((float)(v.phase * 2 * M_PI)) * expf(-v.age / (0.04f * SAMPLE_RATE));
-            out = 0.7f * n + 0.5f * tone;
+            uint32_t ph = v.phase, inc190 = (uint32_t)(int32_t)(190.0f * PHASE_PER_HZ);
+            if (v.age == 0) v.dec2 = 1.0f;
+            float d2 = v.dec2;
+            for (int k = 0; k < n; k++) {
+                ph += inc190;
+                d2 *= 0.99943330f;  // e^(-1 / (0.04 s))
+                buf[k] = 0.7f * frand(v.noise) + 0.5f * sin_ph(ph) * d2;
+            }
+            v.phase = ph;
+            v.dec2 = d2;
             break;
         }
         case VK_HAT:
         case VK_CYMBAL: {
-            float n = frand(v.noise);
-            float hp = n - v.lp;  // crude high-pass
-            v.lp += (n - v.lp) * 0.3f;
-            out = hp;
+            float lp = v.lp;
+            for (int k = 0; k < n; k++) {
+                float x = frand(v.noise);
+                buf[k] = x - lp;  // crude high-pass
+                lp += (x - lp) * 0.3f;
+            }
+            v.lp = lp;
             break;
         }
         case VK_TOM: {
-            v.sweep *= 0.99985f;
-            v.phase += v.freq * (0.7f + 0.3f * v.sweep) / SAMPLE_RATE;
-            v.phase -= floor(v.phase);
-            out = sinf((float)(v.phase * 2 * M_PI));
+            uint32_t ph = v.phase;
+            float sw = v.sweep;
+            for (int k = 0; k < n; k++) {
+                sw *= 0.99985f;
+                ph += (uint32_t)(int32_t)(v.freq * (0.7f + 0.3f * sw) * PHASE_PER_HZ);
+                buf[k] = sin_ph(ph);
+            }
+            v.phase = ph;
+            v.sweep = sw;
             break;
         }
         default:
-            out = frand(v.noise) * 0.5f;
+            for (int k = 0; k < n; k++) buf[k] = frand(v.noise) * 0.5f;
             break;
     }
     // envelope
-    switch (v.stage) {
-        case 0:
-            v.env += v.attack;
-            if (v.env >= 1.0f) {
-                v.env = 1.0f;
-                v.stage = 1;
-            }
-            break;
-        case 1:
-            if (v.env > v.sustain) {
-                v.env -= v.decay * (v.kind == VK_PLUCK ? 0 : 1);
-                if (v.env < v.sustain) v.env = v.sustain;
-            }
-            if (v.env <= 0.0005f && v.sustain <= 0) v.active = false;
-            break;
-        case 2:
-            v.env -= v.release;
-            if (v.env <= 0) {
-                v.env = 0;
-                v.active = false;
-            }
-            break;
+    float env = v.env;
+    for (int k = 0; k < n; k++) {
+        switch (v.stage) {
+            case 0:
+                env += v.attack;
+                if (env >= 1.0f) {
+                    env = 1.0f;
+                    v.stage = 1;
+                }
+                break;
+            case 1:
+                if (env > v.sustain && v.kind != VK_PLUCK) {
+                    env -= v.decay;
+                    if (env < v.sustain) env = v.sustain;
+                }
+                break;
+            case 2:
+                env -= v.release;
+                if (env < 0) env = 0;
+                break;
+        }
+        buf[k] *= env;
     }
+    v.env = env;
+    if ((v.stage == 2 && env <= 0) || (v.stage == 1 && v.sustain <= 0 && env <= 0.0005f)) v.active = false;
+    v.age += n;
     if (v.kind == VK_PLUCK && v.age > SAMPLE_RATE * 6) v.active = false;
-    v.age++;
-    return out * v.env;
 }
 
+}  // namespace
+int64_t g_midi_mix_us = 0;  // time spent synthesizing (profiling)
+namespace {
+
 void mix(int16_t* out, int frames) {
-    for (int i = 0; i < frames; i++) {
+    int64_t t0 = platform_time_us();
+    struct Acc { int64_t t0; ~Acc() { g_midi_mix_us += platform_time_us() - t0; } } acc{t0};
+    float L[BLOCK], R[BLOCK], tmp[BLOCK];
+    for (int base = 0; base < frames; base += BLOCK) {
+        int n = frames - base < BLOCK ? frames - base : BLOCK;
         for (int p = 0; p < MAX_PLAYERS; p++)
-            if (g_players[p].used && g_players[p].playing) sequence(p);
-        float l = 0, r = 0;
+            if (g_players[p].used && g_players[p].playing) sequence(p, n);
+        for (int k = 0; k < n; k++) L[k] = R[k] = 0;
         for (Voice& v : g_voices) {
             if (!v.active) continue;
             Player& pl = g_players[v.player];
             Channel& c = pl.ch[v.ch];
-            float s = voice_sample(v, c.bend) * v.amp * c.volume * c.expression * pl.volume;
-            l += s * (1.0f - c.pan);
-            r += s * c.pan;
+            render_block(v, c.bend, tmp, n);
+            float g = v.amp * c.volume * c.expression * pl.volume;
+            float gl = g * (1.0f - c.pan), gr = g * c.pan;
+            for (int k = 0; k < n; k++) {
+                L[k] += tmp[k] * gl;
+                R[k] += tmp[k] * gr;
+            }
         }
-        // soft clip
-        l *= 0.85f;
-        r *= 0.85f;
-        l = l / (1.0f + fabsf(l));
-        r = r / (1.0f + fabsf(r));
-        out[i * 2] = (int16_t)(l * 32000.0f);
-        out[i * 2 + 1] = (int16_t)(r * 32000.0f);
+        for (int k = 0; k < n; k++) {
+            float l = L[k] * 0.85f, r = R[k] * 0.85f;
+            l = l / (1.0f + fabsf(l));  // soft clip
+            r = r / (1.0f + fabsf(r));
+            out[(base + k) * 2] = (int16_t)(int32_t)(l * 32000.0f);
+            out[(base + k) * 2 + 1] = (int16_t)(int32_t)(r * 32000.0f);
+        }
     }
 }
 
 void ensure_started() {
     if (!g_started) {
         g_started = true;
+        init_tables();
         platform_audio_start(mix);
     }
 }
@@ -604,6 +681,16 @@ void midi_play(int h, int loops) {
     reset_player(pl);
     pl.loops_left = loops == 0 ? 1 : loops;
     pl.playing = true;
+#ifdef PVZ_PROFILE
+    {
+        static int16_t scratch[4410 * 2];
+        int64_t t0 = platform_time_us();
+        for (int i = 0; i < 10; i++) mix(scratch, 4410);
+        printf("[profile] synth: 1 s of music in %d ms\n", (int)((platform_time_us() - t0) / 1000));
+        kill_player_voices(h);
+        reset_player(pl);
+    }
+#endif
     platform_audio_unlock();
 }
 

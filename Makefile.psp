@@ -25,9 +25,9 @@ OBJS := $(patsubst %.cpp,$(BUILD)/gen/%.o,$(GEN_SOURCES)) $(patsubst %.cpp,$(BUI
         $(BUILD)/runtime/resources.o
 
 INCDIR := runtime $(GEN)
-CFLAGS := -O2 -G0 -Wall -Wno-unused -Wno-invalid-offsetof -fwrapv -fno-strict-aliasing
+CFLAGS := $(if $(PROFILE),-DPVZ_PROFILE) -DPIX_ABGR -O2 -G0 -Wall -Wno-unused -Wno-invalid-offsetof -fwrapv -fno-strict-aliasing
 CXXFLAGS := -std=gnu++17
-LIBS := -lstdc++ -lm -lpspaudio -lpsppower -lpsputility -lpsprtc
+LIBS := -lpspgu -lstdc++ -lm -lpspaudio -lpsppower -lpsputility -lpsprtc
 BUILD_PRX := 1
 PSP_FW_VERSION := 500
 

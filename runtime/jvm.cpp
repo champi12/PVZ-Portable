@@ -5,6 +5,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#ifdef __PSP__
+#include <malloc.h>
+#endif
 #include <vector>
 
 // ------------------------------------------------------------------------------------------
@@ -37,7 +40,13 @@ static size_t object_size(JObject* o) {
 }
 
 static JObject* raw_alloc(JClass* cls, size_t size) {
+#ifdef __PSP__
+    // 16-byte alignment lets the GPU use image pixel arrays directly as textures.
+    JObject* o = (JObject*)memalign(16, size);
+    if (o) memset(o, 0, size);
+#else
     JObject* o = (JObject*)calloc(1, size);
+#endif
     if (o == nullptr) {
         fprintf(stderr, "out of memory allocating %u bytes (heap %u)\n", (unsigned)size, (unsigned)g_heap_bytes);
         JObject* oom = (JObject*)calloc(1, C_java_lang_OutOfMemoryError.instance_size);
@@ -112,8 +121,8 @@ JObject* jmultianewarray(JClass* arrcls, int ndims, const int32_t* dims) {
 static std::vector<JObject*> g_mark_stack;
 
 static inline void mark(JObject* o) {
-    if (o != nullptr && !o->gc_mark) {
-        o->gc_mark = 1;
+    if (o != nullptr && !(o->gc_mark & JMARK_LIVE)) {
+        o->gc_mark |= JMARK_LIVE;
         g_mark_stack.push_back(o);
     }
 }
@@ -142,8 +151,8 @@ void gc_collect() {
     size_t freed = 0;
     while (*link) {
         JObject* o = *link;
-        if (o->gc_mark) {
-            o->gc_mark = 0;
+        if (o->gc_mark & JMARK_LIVE) {
+            o->gc_mark &= ~JMARK_LIVE;
             link = &o->gc_next;
         } else {
             *link = o->gc_next;

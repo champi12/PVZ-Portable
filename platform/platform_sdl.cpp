@@ -169,6 +169,11 @@ int64_t platform_time_ms() {
     return (int64_t)SDL_GetTicks64();
 }
 
+int64_t platform_time_us() {
+    if (g_headless) return g_virtual_ms * 1000;
+    return (int64_t)(SDL_GetPerformanceCounter() * 1000000.0 / SDL_GetPerformanceFrequency());
+}
+
 void platform_sleep_ms(int ms) {
     if (g_headless) {
         g_virtual_ms += ms;
@@ -246,6 +251,10 @@ void platform_present(const uint32_t* argb) {
     SDL_RenderClear(g_renderer);
     SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
     SDL_RenderPresent(g_renderer);
+}
+
+bool platform_present_canvas(const uint32_t*, int, int, int, const PresentCursor*) {
+    return false;  // the runtime scales on the CPU
 }
 
 bool platform_load_save(const char* name, std::vector<uint8_t>& out) {

@@ -38,11 +38,30 @@ void platform_shutdown();
 [[noreturn]] void platform_fatal(const char* msg);
 
 int64_t platform_time_ms();
+int64_t platform_time_us();
 void platform_sleep_ms(int ms);
 
 void platform_read_pad(PadState* pad);
-// Shows a SCREEN_W x SCREEN_H ARGB frame.
-void platform_present(const uint32_t* argb);
+// Pixel format of all images: ARGB on PC, ABGR (the PSP's native 8888 layout) on the PSP.
+#ifdef PIX_ABGR
+#define PIX_FROM_ARGB(p) (((p) & 0xFF00FF00u) | (((p) >> 16) & 0xFFu) | (((p) & 0xFFu) << 16))
+#else
+#define PIX_FROM_ARGB(p) (p)
+#endif
+#define PIX_TO_ARGB(p) PIX_FROM_ARGB(p)
+
+enum { CURSOR_W = 16, CURSOR_H = 32 };
+struct PresentCursor {
+    bool visible;
+    int x, y;
+    const uint32_t* image;  // CURSOR_W x CURSOR_H, 0 = transparent
+};
+
+// Shows a SCREEN_W x SCREEN_H frame.
+void platform_present(const uint32_t* pixels);
+// Shows the view_w x h top-left part of a canvas scaled to the whole screen, with the cursor.
+// Returns false if the backend cannot scale (the runtime then scales on the CPU).
+bool platform_present_canvas(const uint32_t* pixels, int stride, int view_w, int h, const PresentCursor* cursor);
 
 // Save data (record stores).
 bool platform_load_save(const char* name, std::vector<uint8_t>& out);

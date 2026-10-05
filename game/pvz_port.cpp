@@ -41,53 +41,10 @@ static int choose_view_width(int canvas_w) {
     return canvas_w;
 }
 
-static void present_frame(JObject* screen_graphics) {
+static void present_frame() {
     Img* src = (Img*)S_cc__a_Ljavax_microedition_lcdui_Image_;
-    Img* dst = (Img*)((Gfx*)screen_graphics)->f_img_Ljavax_microedition_lcdui_Image_;
-    const uint32_t* s = jadata<uint32_t>(src->f_pixels_AI);
-    uint32_t* d = jadata<uint32_t>(dst->f_pixels_AI);
-    const int SW = src->f_width_I, GH = src->f_height_I;
-    const int GW = choose_view_width(SW);
-    g_view_w = GW;
-    if (SW == SCREEN_W && GH == SCREEN_H) {
-        memcpy(d, s, SCREEN_W * SCREEN_H * 4);
-        return;
-    }
-    // Bilinear resample GW x GH -> SCREEN_W x SCREEN_H (fixed point, 1/128 px).
-    static int xs[SCREEN_W], xw[SCREEN_W];
-    static int cached_gw = -1;
-    if (cached_gw != GW) {
-        for (int x = 0; x < SCREEN_W; x++) {
-            int fx = ((x * 2 + 1) * GW * 128) / (SCREEN_W * 2) - 64;
-            if (fx < 0) fx = 0;
-            xs[x] = fx >> 7;
-            xw[x] = fx & 127;
-            if (xs[x] >= GW - 1) { xs[x] = GW - 2; xw[x] = 128; }
-        }
-        cached_gw = GW;
-    }
-    for (int y = 0; y < SCREEN_H; y++) {
-        int fy = ((y * 2 + 1) * GH * 128) / (SCREEN_H * 2) - 64;
-        if (fy < 0) fy = 0;
-        int y0 = fy >> 7, wy = fy & 127;
-        int y1 = y0 + 1 < GH ? y0 + 1 : y0;
-        const uint32_t* r0 = s + y0 * SW;
-        const uint32_t* r1 = s + y1 * SW;
-        uint32_t* o = d + y * SCREEN_W;
-        for (int x = 0; x < SCREEN_W; x++) {
-            int sx = xs[x], wx = xw[x];
-            uint32_t a = r0[sx], b = r0[sx + 1], c = r1[sx], e = r1[sx + 1];
-            // horizontal
-            uint32_t t_rb = (((a & 0xFF00FF) * (128 - wx) + (b & 0xFF00FF) * wx) >> 7) & 0xFF00FF;
-            uint32_t t_g = (((a & 0x00FF00) * (128 - wx) + (b & 0x00FF00) * wx) >> 7) & 0x00FF00;
-            uint32_t b_rb = (((c & 0xFF00FF) * (128 - wx) + (e & 0xFF00FF) * wx) >> 7) & 0xFF00FF;
-            uint32_t b_g = (((c & 0x00FF00) * (128 - wx) + (e & 0x00FF00) * wx) >> 7) & 0x00FF00;
-            // vertical
-            uint32_t rb = ((t_rb * (128 - wy) + b_rb * wy) >> 7) & 0xFF00FF;
-            uint32_t g = ((t_g * (128 - wy) + b_g * wy) >> 7) & 0x00FF00;
-            o[x] = 0xFF000000u | rb | g;
-        }
-    }
+    g_view_w = choose_view_width(src->f_width_I);
+    port_present_canvas(jadata<uint32_t>(src->f_pixels_AI), src->f_width_I, g_view_w, src->f_height_I);
 }
 
 // ---- Loading screens --------------------------------------------------------------------
@@ -111,16 +68,39 @@ static bool instant_loading_active() { return S_ce__a_Z && S_ce__d_Z; }
 
 void M_cc__paint__Ljavax_microedition_lcdui_Graphics__V(JObject* self, JObject* g) {
     (void)self;
+    (void)g;
     if (!S_cc__d_Z) return;
     // Keep showing the previous frame instead of a loading screen.
     if (instant_loading_active()) {
-        if (getenv("PVZ_DEBUG")) fprintf(stderr, "[%lld] skip loading frame\n", (long long)platform_time_ms());
+        static const bool debug = getenv("PVZ_DEBUG") != nullptr;
+        if (debug) fprintf(stderr, "[%lld] skip loading frame\n", (long long)platform_time_ms());
         return;
     }
     if (S_Game__a_Z) {
         g_menu_art_drawn = false;
+        // Development aid: PVZ_LEVEL=n jumps to level n (0 = 1-1, 10 = 2-1...) on the main menu.
+        static const char* jump = getenv("PVZ_LEVEL");
+        if (jump && S_bt__b_I == 3) {
+            S_bo__d_I = atoi(jump);
+            jump = nullptr;
+        }
+        int64_t t0 = port_time_us();
         M_t__a__Ljavax_microedition_lcdui_Graphics__V(S_cc__a_Ljavax_microedition_lcdui_Graphics_);
-        if (getenv("PVZ_STATE")) {
+        int64_t t1 = port_time_us();
+        g_prof_us[PROF_RENDER] += t1 - t0;
+        static const bool draw_stats = getenv("PVZ_DRAWSTATS") != nullptr;
+        if (draw_stats) {
+            extern int64_t g_stat_fill_calls, g_stat_fill_px, g_stat_blit_calls, g_stat_blit_px, g_stat_blit_tr_px;
+            static int frames = 0;
+            if (++frames % 30 == 0) {
+                fprintf(stderr, "[%lld] per frame: fill %lld calls %lld px, blit %lld calls %lld px (%lld transformed)\n",
+                        (long long)platform_time_ms(), g_stat_fill_calls / 30, g_stat_fill_px / 30,
+                        g_stat_blit_calls / 30, g_stat_blit_px / 30, g_stat_blit_tr_px / 30);
+                g_stat_fill_calls = g_stat_fill_px = g_stat_blit_calls = g_stat_blit_px = g_stat_blit_tr_px = 0;
+            }
+        }
+        static const bool trace_state = getenv("PVZ_STATE") != nullptr;
+        if (trace_state) {
             static int last = -12345;
             int key = S_bt__a_I * 10000 + S_bt__b_I * 10 + 0;
             if (key != last) {
@@ -129,7 +109,9 @@ void M_cc__paint__Ljavax_microedition_lcdui_Graphics__V(JObject* self, JObject* 
                 last = key;
             }
         }
-        present_frame(g);
+        int64_t t2 = port_time_us();
+        present_frame();
+        g_prof_us[PROF_SCALE] += port_time_us() - t2;
     }
     if (S_cc__b_Z && !S_cc__a_Z) {
         S_cc__b_Z = 0;
@@ -147,3 +129,10 @@ void game_screen_to_pointer(int sx, int sy, int* px, int* py) {
 }
 
 bool game_wants_cursor() { return true; }
+
+// Game logic step (profiling wrapper).
+void M_t__b___V() {
+    int64_t t0 = port_time_us();
+    M_t__b___V__orig();
+    g_prof_us[PROF_LOGIC] += port_time_us() - t0;
+}

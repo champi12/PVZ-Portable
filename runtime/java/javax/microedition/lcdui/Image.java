@@ -61,6 +61,7 @@ public class Image {
         int[] p = new int[w * h];
         System.arraycopy(rgb, 0, p, 0, w * h);
         if (!alpha) for (int i = 0; i < p.length; i++) p[i] |= 0xFF000000;
+        swapToNative(p, 0, p.length);
         return new Image(w, h, p, false);
     }
     public static Image createImage(Image src, int x, int y, int w, int h, int transform) {
@@ -75,6 +76,8 @@ public class Image {
         return img;
     }
 
+    /** Swaps red and blue on platforms whose native pixel layout is ABGR (no-op elsewhere). */
+    private static native void swapToNative(int[] p, int off, int len);
     private static native int[] decode(byte[] data, int off, int len, int[] wh);
 
     public Graphics getGraphics() {
@@ -86,7 +89,9 @@ public class Image {
     public boolean isMutable() { return mutable; }
     public void getRGB(int[] rgb, int offset, int scanlength, int x, int y, int w, int h) {
         if (x < 0 || y < 0 || x + w > width || y + h > height) throw new IllegalArgumentException();
-        for (int j = 0; j < h; j++)
+        for (int j = 0; j < h; j++) {
             System.arraycopy(pixels, (y + j) * width + x, rgb, offset + j * scanlength, w);
+            swapToNative(rgb, offset + j * scanlength, w);
+        }
     }
 }

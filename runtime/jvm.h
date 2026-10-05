@@ -10,7 +10,12 @@ struct JClass;
 struct JObject {
     JClass* cls;
     JObject* gc_next;   // intrusive list of all live objects
-    uint32_t gc_mark;
+    uint32_t gc_mark;   // JMARK_* bits
+};
+
+enum {
+    JMARK_LIVE = 1,     // reached during the current GC mark phase
+    JMARK_OPAQUE = 2,   // int[] of image pixels that are all fully opaque
 };
 
 // Arrays: header, then the length, then element data aligned to 8 bytes.
