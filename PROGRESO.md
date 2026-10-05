@@ -216,3 +216,28 @@ dist/       carpeta lista para copiar a la PSP / PPSSPP
 - **Música en la consola real**: el hilo de música abría `data/music/...` con ruta relativa,
   pero en PSP los hilos nuevos no tienen directorio de trabajo (PPSSPP lo avisa: "no current
   working directory"), así que la música no sonaba. `music_play` ahora pasa la ruta completa.
+
+### ✅ Sesión 7 — lo que faltaba del J2ME (comparando con su código y con el port traducido)
+Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y su código:
+- **Menú de la lápida** (fondo 290, logo, pieza 527 con la caja del nivel en la fuente 253,
+  losas 270/271 con la fuente 566, icono de salir 525) y la **mano de zombi** (443) al pulsar
+  Aventura. Pantallas nuevas: **Opciones** (sonido, música, borrar datos), **Almanaque**
+  (plantas y zombis con su animación y los textos oficiales 130-238) y **Acerca de**.
+  `gfx_set_vscale(272/320)` dibuja estas pantallas con las coordenadas 480x320 del J2ME.
+- **Intro del nivel**: la cámara va a la calle con la curva exacta del J2ME (0→130 en 30
+  frames de 1/6 s, vuelta en 25) y se ven los zombis del nivel de pie en la calle (posiciones
+  de sus sombras 550). Si hay más plantas que huecos, sale **"¡ELIGE TUS PLANTAS!"** como en el
+  J2ME (clase `c`): columna de la izquierda (430/481) con las elegidas, panel 386/214/157/203/375
+  con la cuadrícula de 3 columnas en el orden del J2ME y el título en marquesina.
+- **Cortacésped**: en x=140, 6 px por encima de la casilla, y entran rodando desde x=115 con
+  los pasos +5,+4,+4,+4,+3,+3,+2, primero el de abajo y cada fila 3 frames después. La barra de
+  semillas y el contador de soles bajan a la vez.
+- **Patatapum**: estados del J2ME (`cp` tipo 8): al explotar queda el puré (frame 8, imagen 564)
+  2 s, sale "SPUDOW!!" (104) y 10-15 trozos de patata (hojas 85/142), como `bk.d`.
+- **Partículas** (hojas de sprites de la clase `y`): salpicadura de guisante/hielo/fuego,
+  trozos de cono (70) y cubo (234), humo de la humoseta (232), llamas del jalapeño (477, por
+  frames), POWIE/humo de la petacereza, DOOM y nubes de la petaseta, copos de la seta congelada.
+- **Proyectiles**: el guisante es la imagen 73 (la 544 es la col que sostiene la coltapulta); la
+  col en vuelo es la 597. Las catapultas lanzan en el frame 6, cuando desaparece lo que sostienen.
+- Nombres oficiales del J2ME para las plantas (COMEPIEDRAS, SETA MIEDICA, PETASETA, ZAMPALGA...).
+- Arreglado `gfx_clip` (pasaba x2,y2 a `sceGuScissor`, que espera ancho y alto).

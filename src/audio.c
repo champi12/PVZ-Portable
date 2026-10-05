@@ -153,7 +153,7 @@ static unsigned char __attribute__((aligned(64))) mp3_buf[16 * 1024];
 static short __attribute__((aligned(64))) pcm_buf[16 * (1152 / 2)];
 static char mus_req_path[256];
 static volatile int mus_req, mus_req_loop, mus_stop_req, mus_playing;
-static volatile int mus_vol = 256;
+static volatile int mus_vol = 256, mus_master = 256;
 static int mp3_ok;
 
 static int fill_stream(SceUID fd, int handle)
@@ -209,7 +209,7 @@ static int music_thread(SceSize args, void *argp)
             src_ch = sceAudioSRCChReserve(samples, 44100, 2);
             last_samples = samples;
         }
-        sceAudioSRCOutputBlocking((mus_vol * PSP_AUDIO_VOLUME_MAX) >> 8, buf);
+        sceAudioSRCOutputBlocking((((mus_vol * mus_master) >> 8) * PSP_AUDIO_VOLUME_MAX) >> 8, buf);
     }
     if (handle >= 0) sceMp3ReleaseMp3Handle(handle);
     if (fd >= 0) sceIoClose(fd);
@@ -236,6 +236,7 @@ void music_play(const char *path, int loop)
 }
 void music_stop(void) { mus_stop_req = 1; }
 void music_set_volume(int vol) { mus_vol = vol; }
+void music_set_master(int vol) { mus_master = vol; }
 int music_is_playing(void) { return mus_playing; }
 
 int audio_init(const char *sfx_pak)

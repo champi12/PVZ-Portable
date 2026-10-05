@@ -48,27 +48,33 @@ static const PlantDef plant_defs[PL_COUNT] = {
  { "SETA DESESPORADA", 196,   0,  750, RE_PUFFSHROOM,     300, PK_SHOOTER, PF_MUSHROOM,             0,               0, 4,   5, 7,   150 },
  { "SETA SOLAR",       187,  25,  750, RE_SUNSHROOM,      300, PK_SUN,     PF_MUSHROOM,             0,               0, 2,  -1,-1,  2500 },
  { "HUMOSETA",         483,  75,  750, RE_FUMESHROOM,     300, PK_FUME,    PF_MUSHROOM,             0,               0, 4,   5, 11,  150 },
- { "TUMBATUMBAS",      497,  75,  750, RE_GRAVEBUSTER,    300, PK_GRAVEBUSTER, 0,                   0,               0, 2,   3, 9,   0 },
+ { "COMEPIEDRAS",      497,  75,  750, RE_GRAVEBUSTER,    300, PK_GRAVEBUSTER, 0,                   0,               0, 2,   3, 9,   0 },
  { "HIPNOSETA",        424,  75, 3000, RE_HYPNOSHROOM,    300, PK_HYPNO,   PF_MUSHROOM,             0,               0, 3,  -1,-1,   0 },
- { "SETA MIEDOSA",      84,  25,  750, RE_SCAREDYSHROOM,  300, PK_SHOOTER, PF_MUSHROOM,             0,               0, 3,   4, 7,   150 },
- { "SETA HIELO",       330,  75, 5000, RE_ICESHROOM,      300, PK_INSTANT, PF_MUSHROOM,             0,               0, 4,   5, 8,   0 },
- { "SETA DESTRUCTORA",  65, 125, 5000, RE_DOOMSHROOM,     300, PK_INSTANT, PF_MUSHROOM,             0,               0, 4,   5, 12,  0 },
+ { "SETA MIEDICA",      84,  25,  750, RE_SCAREDYSHROOM,  300, PK_SHOOTER, PF_MUSHROOM,             0,               0, 3,   4, 7,   150 },
+ { "SETA CONGELADA",   330,  75, 5000, RE_ICESHROOM,      300, PK_INSTANT, PF_MUSHROOM,             0,               0, 4,   5, 8,   0 },
+ { "PETASETA",          65, 125, 5000, RE_DOOMSHROOM,     300, PK_INSTANT, PF_MUSHROOM,             0,               0, 4,   5, 12,  0 },
  { "NENÚFAR",            3,  25,  750, RE_LILYPAD,        300, PK_POT,     PF_AQUATIC | PF_FLAT,    0,               0, 2,  -1,-1,   0 },
  { "APISONAFLOR",      389,  50, 3000, RE_SQUASH,         300, PK_SQUASH,  0,                       0,               0, 4,   8, 9,   0 },
  { "TRIPITIDORA",      547, 325,  750, RE_THREEPEATER,    300, PK_SHOOTER, 0,                       0,               0, 3,   4, 6,   150 },
- { "ALGA ENREDADORA",  583,  25, 3000, RE_TANGLEKELP,     300, PK_KELP,    PF_AQUATIC,              0,               0, 4,   5, 16,  0 },
+ { "ZAMPALGA",         583,  25, 3000, RE_TANGLEKELP,     300, PK_KELP,    PF_AQUATIC,              0,               0, 4,   5, 16,  0 },
  { "JALAPEÑO",         229, 125, 5000, RE_JALAPENO,       300, PK_INSTANT, 0,                       0,               0, 1,   2, 4,   0 },
  { "PINCHOHIERBA",     195, 100,  750, RE_SPIKEWEED,      300, PK_SPIKE,   PF_NOEAT | PF_FLAT,      0,               0, 5,   6, 7,   100 },
  { "PLANTORCHA",       310, 175,  750, RE_TORCHWOOD,      300, PK_TORCH,   0,                       0,               0, 10, -1,-1,   0 },
  { "NUEZ CÁSCARA-RABIAS",241,125, 3000, RE_TALLNUT,       8000, PK_WALL,    0,                       0,              10, 18, -1,-1,   0 },
- { "SETA MARINA",      466,   0, 3000, RE_SEASHROOM,      300, PK_SHOOTER, PF_MUSHROOM | PF_AQUATIC,0,               1, 4,   5, 7,   150 },
+ { "MARSETA",          466,   0, 3000, RE_SEASHROOM,      300, PK_SHOOTER, PF_MUSHROOM | PF_AQUATIC,0,               1, 4,   5, 7,   150 },
  { "CACTUS",           562, 125,  750, RE_CACTUS,         300, PK_SHOOTER, 0,                       0,               0, 3,   4, 8,   150 },
- { "FRUTAESTRELLA",    491, 125,  750, RE_STARFRUIT,      300, PK_STAR,    0,                       0,               0, 3,   4, 7,   150 },
+ { "FRUSTRELLA",       491, 125,  750, RE_STARFRUIT,      300, PK_STAR,    0,                       0,               0, 3,   4, 7,   150 },
  { "COLTAPULTA",       427, 100,  750, RE_CABBAGEPULT,    300, PK_LOBBER,  0,                       0,               0, 3,   4, 8,   300 },
  { "MACETA",           362,  25,  750, RE_FLOWERPOT,      300, PK_POT,     PF_FLAT,                 0,               0, 2,  -1,-1,   0 },
  { "LANZAMAÍZ",        114, 100,  750, RE_KERNELPULT,     300, PK_LOBBER,  0,                       0,               0, 2,   3, 9,   300 },
  { "MELONPULTA",       219, 300,  750, RE_MELONPULT,      300, PK_LOBBER,  0,                       0,               0, 3,   4, 8,   300 },
 };
+
+/* textos del almanaque (indices en TXT_ES) */
+static const unsigned char plant_txt_name[PL_COUNT] __attribute__((unused)) = {
+    154,153,156,155,157,159,160,158,172,173,174,175,178,176,177,179,180,162,161,182,163,164,165,166,181,171,170,167,184,168,169 };
+static const unsigned char plant_txt_desc[PL_COUNT] __attribute__((unused)) = {
+    185,186,188,187,189,191,192,190,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215 };
 
 /* ---------------- zombis (orden del J2ME, clase cj) ---------------- */
 enum {
@@ -76,6 +82,10 @@ enum {
     ZT_NEWSPAPER, ZT_BACKUP, ZT_GARGANTUAR, ZT_LADDER, ZT_CATAPULT, ZT_POGO, ZT_DIGGER, ZT_BALLOON,
     ZT_DUCKY, ZT_SNORKEL, ZT_DOLPHIN, ZT_BOSS, ZT_IMP, ZT_COUNT
 };
+static const unsigned char zombie_txt_name[ZT_COUNT] __attribute__((unused)) = {
+    130,131,132,135,136,134,133,138,140,141,139,142,143,144,145,146,147,148,149,150,152,151 };
+static const unsigned char zombie_txt_desc[ZT_COUNT] __attribute__((unused)) = {
+    217,218,219,223,224,220,221,225,230,222,226,236,234,235,233,232,231,227,228,229,238,237 };
 /* tablas literales del J2ME (cj.a) */
 __attribute__((unused)) static const unsigned char z_cost[ZT_COUNT + 1]     = {1,1,2,4,7,4,2,5,3,2,1,10,4,5,4,4,2,1,3,3,10,10,10};
 static const unsigned short z_weight[ZT_COUNT + 1]  = {4000,0,4000,3500,2000,3000,2000,5000,1000,1000,0,1500,1000,1500,1000,1000,2000,4000,2000,2000,0,1500,1500};

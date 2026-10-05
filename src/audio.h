@@ -20,6 +20,7 @@ unsigned int sfx_mem_used(void);
 void music_play(const char *path, int loop);
 void music_stop(void);
 void music_set_volume(int vol);        /* 0..256 */
+void music_set_master(int vol);        /* opcion del menu: 0 = musica apagada */
 int  music_is_playing(void);
 
 #endif

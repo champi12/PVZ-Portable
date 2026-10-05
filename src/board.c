@@ -40,14 +40,14 @@
 #define IMG_GRAVE3 338
 #define IMG_CRATER 155
 #define IMG_FLAMES 477
-#define IMG_PEA 544          /* guisante (el de la sesion 3) */
+#define IMG_PEA 73           /* guisante del J2ME (la 544 es la col que sostiene la coltapulta) */
 #define IMG_SEASPORE 444     /* espora de la seta marina */
 #define IMG_SNOWPEA 587
 #define IMG_FIREPEA 335
 #define IMG_PUFF 324
 #define IMG_SPIKE 426        /* espina del cactus (pista 11 de su animacion) */
 #define IMG_STAR 20
-#define IMG_CABBAGE 544      /* pista 6 de la coltapulta */
+#define IMG_CABBAGE 597      /* col en vuelo (la 544 es la que sostiene, pista 6) */
 #define IMG_KERNEL 30        /* pista 5 del lanzamaiz */
 #define IMG_BUTTER 281
 #define IMG_MELON 473        /* pista 7 de la melonpulta */
@@ -55,11 +55,24 @@
 #define IMG_ICEBALL 64
 #define IMG_ROOFCLEANER 413
 #define IMG_BALL 162
-#define IMG_FUME 89
 #define IMG_FLAG 543
 #define IMG_NOTE 139
 #define IMG_DIRT 400
 #define IMG_LADDER 401
+#define IMG_MASHED 564       /* patatapum aplastada (frame 8 de su animacion) */
+#define IMG_ZHEAD 282        /* cabeza de zombi de la barra de progreso */
+#define IMG_PFLAG 543        /* banderita de la barra de progreso */
+
+/* hojas de particulas del J2ME (clase y): imagen y ancho de cada frame */
+enum {
+    PS_PEA, PS_SNOW, PS_YELLOW, PS_GREENBIT, PS_GREYBIT, PS_YELLOWBIT, PS_FLAKE, PS_PURPLEDOT, PS_CONEBIT, PS_CYANBIT,
+    PS_BUCKETBIT, PS_DIRT, PS_STARW, PS_STARY, PS_PUFF, PS_FUMEBIT, PS_SKIN, PS_FLESH, PS_SMOKE, PS_CLOUD, PS_FLAME,
+    PS_FIRE, PS_DOOMCLOUD, PS_FUMECLOUD, PS_ICE, PS_RED, PS_SPLASH, PS_ICECRYSTAL, PS_POWIE, PS_SPUDOW, PS_DOOM, PS_COUNT
+};
+static const short psheet[PS_COUNT][2] = {
+    {352,12}, {279,12}, {287,12}, {372,6}, {394,6}, {221,6}, {218,9}, {66,4}, {70,6}, {74,6},
+    {234,6}, {138,38}, {150,9}, {396,8}, {197,12}, {89,12}, {85,11}, {142,11}, {15,14}, {535,30}, {165,24},
+    {477,44}, {5,30}, {232,40}, {10,30}, {325,44}, {52,61}, {395,34}, {83,54}, {104,53}, {590,60} };
 
 /* ---------------- textos (traduccion oficial, tabla t-spa) ---------------- */
 #define TXT_READY "PREPARADOS..."
@@ -104,20 +117,20 @@ typedef struct {
     float x, y, vx, vy, x0, y0, tx, ty, t, dur, maxx;
 } Proj;
 typedef struct { int alive; float x, y, vy, ty; int ttl, from_plant, collecting, value; } Sun;
-typedef struct { int state; float x; } Mower;
-typedef struct { int alive, img, ttl, row; float x, y, sx; } Fx;
+typedef struct { int state; float x; } Mower;        /* state 0 quieto, 1 avanzando, 2 gastado */
+typedef struct { int alive, sheet, loop; float x, y, vx, vy, g, age, ttl, sc; } Part;
 
 #define MAXZ 64
 #define MAXP 96
 #define MAXS 32
-#define MAXFX 16
+#define MAXPT 160
 static Plant P[RMAX][COLS][2];          /* [0] base (nenufar/maceta), [1] planta */
 static int grave[RMAX][COLS], crater[RMAX][COLS];
 static Zombie Z[MAXZ];
 static Proj PJ[MAXP];
 static Sun S[MAXS];
 static Mower M[RMAX];
-static Fx FX[MAXFX];
+static Part PT[MAXPT];
 
 static int lv, state, state_timer, frame, paused, pause_sel, sun, sky_timer, suns_fallen, result;
 static int seeds[10], nseeds, refresh[10], shovel_ok;
@@ -127,6 +140,13 @@ static int conveyor, belt[12], belt_n, belt_timer; static float belt_x[12];
 static int reward_type, reward_alive; static float reward_x, reward_y;
 static float tick_acc;
 enum { ST_INTRO, ST_PLAY, ST_WONWAIT, ST_LOST };
+/* intro del J2ME: espera, la camara va a la calle (zombis de la oleada), eleccion de plantas,
+ * vuelve, entran los cortacesped y la barra de semillas, y "preparados, listos, a plantar" */
+enum { IP_WAIT, IP_OUT, IP_HOLD, IP_CHOOSE, IP_CHOOSE_OUT, IP_BACK, IP_MOW, IP_READY };
+#define JF (100.0f / 6.0f)          /* un frame logico del J2ME (6 por segundo) en cs */
+static int intro_phase, choosing, ch_list[PL_COUNT], ch_n, ch_cur, ch_scroll, slots, has_shovel_flag;
+static float intro_t, hud_off;
+static Zombie PZ[12]; static int npz;   /* zombis de muestra en la calle */
 enum { MODE_LAWN, MODE_BANK, MODE_SHOVEL };
 
 /* ---------------- utilidades ---------------- */
@@ -155,12 +175,72 @@ static Plant *top_plant(int r, int c) {
 static const PlantDef *pdef(int t) { return &plant_defs[t == PL_BOWLNUT ? PL_WALLNUT : t]; }
 static int seed_type(int i) { return conveyor ? belt[i] : seeds[i]; }
 
-/* ---------------- efectos ---------------- */
-static void fx(int img, float x, float y, int ttl, int row, float sc)
+/* ---------------- efectos (particulas del J2ME: hojas de sprites que se reproducen en su vida) ---------------- */
+static Part *part(int sheet, float x, float y, float vx, float vy, float g, int ttl)
 {
-    for (int i = 0; i < MAXFX; i++) if (!FX[i].alive) {
-        FX[i].alive = 1; FX[i].img = img; FX[i].x = x; FX[i].y = y; FX[i].ttl = ttl; FX[i].row = row; FX[i].sx = sc; return;
+    for (int i = 0; i < MAXPT; i++) if (!PT[i].alive) {
+        Part *p = &PT[i]; memset(p, 0, sizeof(*p));
+        p->alive = 1; p->sheet = sheet; p->x = x; p->y = y; p->vx = vx; p->vy = vy; p->g = g; p->ttl = ttl; p->sc = 1;
+        return p;
     }
+    return NULL;
+}
+/* trocitos que saltan en todas direcciones (cascos, patata, col...) */
+static void burst(int sheet, float x, float y, int n, float speed)
+{
+    for (int k = 0; k < n; k++) {
+        float a = frnd(3.4f, 6.0f), v = frnd(0.4f, 1.0f) * speed;
+        part(sheet, x + frnd(-4, 4), y + frnd(-4, 4), cosf(a) * v, sinf(a) * v, 0.035f, rnd(45, 75));
+    }
+}
+static void splat(int sheet, float x, float y) { part(sheet, x, y, 0, 0, 0, 24); }
+static void update_parts(void)
+{
+    for (int i = 0; i < MAXPT; i++) {
+        Part *p = &PT[i];
+        if (!p->alive) continue;
+        p->x += p->vx; p->y += p->vy; p->vy += p->g;
+        if (++p->age >= p->ttl) p->alive = 0;
+    }
+}
+static void draw_parts(void)
+{
+    for (int i = 0; i < MAXPT; i++) {
+        Part *p = &PT[i];
+        if (!p->alive) continue;
+        int img = psheet[p->sheet][0], fw = psheet[p->sheet][1], h = img_h(img);
+        int nf = img_w(img) / fw; if (nf < 1) nf = 1;
+        int f = p->loop ? ((int)(p->age / 8)) % nf : (int)(p->age * nf / p->ttl);
+        if (f >= nf) f = nf - 1;
+        u32 col = WHITE;
+        float left = p->ttl - p->age;
+        if ((p->loop || nf == 1) && left < 25) col = ((u32)(left * 255 / 25) << 24) | 0xFFFFFF;
+        if (p->sc != 1.0f || nf == 1) {
+            float sc = p->sc;
+            gfx_draw_ex(img, sxw(p->x), syw(p->y), fw / 2.0f, h / 2.0f, sc * G.ws, sc * G.ws, 0, col, 0);
+        } else gfx_draw_region(img, f * fw, 0, fw, h, sxw(p->x) - fw / 2, syw(p->y) - h / 2, col);
+    }
+}
+
+/* petacereza / caja sorpresa: "POWIE!!" con humo naranja y nubes */
+static void boom_fx(float x, float y)
+{
+    for (int k = 0; k < 10; k++) {
+        float a = k * 0.628f, v = frnd(0.25f, 0.6f);
+        part(k & 1 ? PS_CLOUD : PS_SMOKE, x + cosf(a) * 10, y + sinf(a) * 8, cosf(a) * v, sinf(a) * v * 0.7f, 0, rnd(60, 90));
+    }
+    Part *t = part(PS_POWIE, x, y - 6, 0, -0.08f, 0, 110); if (t) t->sc = 1.3f;
+}
+/* patatapum: "SPUDOW!!" y trozos de patata (bk.d del J2ME: 10-15 particulas 12/13) */
+static void spud_fx(float x, float y)
+{
+    int n = rnd(10, 15);
+    for (int k = 0; k < n; k++) {
+        float a = frnd(3.3f, 6.1f), v = frnd(0.5f, 1.3f);
+        part(k > n / 2 ? PS_SKIN : PS_FLESH, x + frnd(-6, 6), y + frnd(-6, 6), cosf(a) * v, sinf(a) * v, 0.04f, rnd(55, 80));
+    }
+    part(PS_SMOKE, x, y, 0, -0.1f, 0, 50);
+    Part *t = part(PS_SPUDOW, x, y - 12, 0, -0.1f, 0, 110); if (t) t->sc = 1.2f;
 }
 
 /* ---------------- soles ---------------- */
@@ -303,7 +383,11 @@ static void z_damage(Zombie *z, int dmg, int from_front, int snow)
         } else { z_parts(z); return; }
     }
     if (z->helm > 0) {
+        int metal = z->type == ZT_BUCKET || z->type == ZT_FOOTBALL;
+        float hx = z->x + 2, hy = cell_y(z->row) + G.rh * 0.15f + z->yoff;
+        if (z->type == ZT_CONE || metal) part(metal ? PS_BUCKETBIT : PS_CONEBIT, hx, hy, frnd(-0.4f, 0.6f), -0.5f, 0.04f, 40);
         z->helm -= dmg;
+        if (z->helm <= 0 && (z->type == ZT_CONE || metal)) burst(metal ? PS_BUCKETBIT : PS_CONEBIT, hx, hy, 6, 1.0f);
         sfx_play(z->type == ZT_BUCKET || z->type == ZT_FOOTBALL ? (rand() & 1 ? SFX_SHIELDHIT : SFX_SHIELDHIT2) : SFX_PLASTICHIT);
         if (z->helm < 0) { z->hp += z->helm; z->helm = 0; }
     } else {
@@ -334,6 +418,7 @@ static int z_front_col(Zombie *z)
     Plant *p = top_plant(z->row, c);
     if (!p) return -1;
     if (pdef(p->type)->flags & PF_NOEAT) return -1;
+    if (p->type == PL_POTATOMINE && p->state == 3) return -1;     /* pure de patata */
     float pc = cell_x(c) + G.cw / 2;
     if (fabsf(fx - pc) < G.cw * 0.45f) return c;
     return -1;
@@ -435,7 +520,7 @@ static void update_zombies(void)
             int c = col_of(z->x);
             for (int r = z->row - 1; r <= z->row + 1; r++) for (int cc = c - 1; cc <= c + 1; cc++)
                 if (r >= 0 && r < G.rows && cc >= 0 && cc < COLS) { kill_plant(r, cc, 1); kill_plant(r, cc, 0); }
-            fx(IMG_POWIE, z->x, cell_y(z->row) + G.rh / 2, 80, z->row, 1);
+            boom_fx(z->x, cell_y(z->row) + G.rh / 2);
             z->alive = 0; continue;
         }
         if (z->type == ZT_DANCER && !z->summoned && z->x < bush_x() - G.cw) {
@@ -561,14 +646,13 @@ static void plant_origin(Plant *p, int r, int c, float *ox, float *oy)
     }
 }
 
-static void explode(float cx, int row, float rx, int rows, int dmg, int img, int sfx)
+static void explode(float cx, int row, float rx, int rows, int dmg, int sfx)
 {
     for (int i = 0; i < MAXZ; i++) {
         Zombie *z = &Z[i];
         if (!z->alive || z->state >= ZS_DYING || abs(z->row - row) > rows || z->hypno) continue;
         if (fabsf(z->x - cx) <= rx) { if (zhp(z) <= dmg) z_kill(z, 1); else z_damage(z, dmg, 0, 0); }
     }
-    if (img >= 0) fx(img, cx, cell_y(row) + G.rh / 2, 90, row, 1);
     sfx_play(sfx);
 }
 
@@ -675,16 +759,24 @@ static void update_plant(Plant *p, int r, int c)
         break;
     }
     case PK_LOBBER: {
+        /* el proyectil sale cuando la pista que lo sostiene desaparece (frame 6 en las tres catapultas) */
         if (p->timer > 0) p->timer--;
         Zombie *t = z_ahead(r, px, 2000, 0);
-        if (t && p->timer <= 0) {
-            p->timer = d->rate; plant_act(p);
-            int kind = p->type == PL_CABBAGEPULT ? PJ_CABBAGE : p->type == PL_MELONPULT ? PJ_MELON : (rand() % 4 == 0 ? PJ_BUTTER : PJ_KERNEL);
-            Proj *q = new_proj(kind, r, px, cell_y(r));
-            if (q) { q->target = (int)(t - Z); q->tx = t->x; q->ty = cell_y(r) + G.rh * 0.35f; q->dur = 100; }
-            sfx_play(p->type == PL_KERNELPULT ? SFX_KERNELPULT : SFX_THROW);
+        if (p->state == 0 && t && p->timer <= 0) {
+            p->timer = d->rate; p->state = 1; plant_act(p);
+            p->aux = rand() % 4 == 0;                  /* lanzamaiz: mantequilla de vez en cuando */
         }
-        if (reanim_done(&p->anim)) plant_set_idle(p);
+        if (p->state == 1 && p->anim.frame >= 6) {
+            p->state = 2;
+            if (t) {
+                int kind = p->type == PL_CABBAGEPULT ? PJ_CABBAGE : p->type == PL_MELONPULT ? PJ_MELON : (p->aux ? PJ_BUTTER : PJ_KERNEL);
+                float ox, oy; plant_origin(p, r, c, &ox, &oy);
+                Proj *q = new_proj(kind, r, px - 4, oy + 2);
+                if (q) { q->target = (int)(t - Z); q->tx = t->x; q->ty = cell_y(r) + G.rh * 0.35f; q->dur = 100; }
+                sfx_play(p->type == PL_KERNELPULT ? SFX_KERNELPULT : SFX_THROW);
+            }
+        }
+        if (p->state && reanim_done(&p->anim)) { p->state = 0; plant_set_idle(p); }
         break;
     }
     case PK_FUME: {
@@ -692,7 +784,11 @@ static void update_plant(Plant *p, int r, int c)
         if (p->timer <= 0 && z_ahead(r, px, G.cw * 4.2f, 0)) {
             p->timer = d->rate; plant_act(p);
             for (int i = 0; i < MAXZ; i++) { Zombie *z = &Z[i]; if (z_hittable(z) && z->row == r && z->x > px - 6 && z->x < px + G.cw * 4.2f && !z->balloon) z_damage(z, 20, 0, 0); }
-            fx(IMG_FUME, px + G.cw * 2.1f, cell_y(r) + G.rh * 0.45f, 40, r, 2.2f);
+            for (int k = 0; k < 3; k++) {     /* nube de humo (hoja 232) y burbujitas moradas */
+                Part *f = part(PS_FUMECLOUD, px + G.cw * (0.9f + k * 1.1f), cell_y(r) + G.rh * 0.35f, 0.25f, 0, 0, 45 + k * 6);
+                (void)f;
+                part(PS_FUMEBIT, px + G.cw * (1.2f + k * 1.0f), cell_y(r) + G.rh * 0.5f, 0.4f, frnd(-0.15f, 0.15f), 0, 40);
+            }
             p->snd = sfx_play(SFX_FUME);
         }
         if (reanim_done(&p->anim) && p->anim.loop == 0) { plant_set_idle(p); sfx_stop(p->snd); p->snd = -1; }
@@ -700,18 +796,28 @@ static void update_plant(Plant *p, int r, int c)
     }
     case PK_INSTANT:
         if (reanim_done(&p->anim)) {
-            if (p->type == PL_CHERRYBOMB) explode(px, r, G.cw * 1.6f, 1, 1800, IMG_POWIE, SFX_CHERRYBOMB);
+            if (p->type == PL_CHERRYBOMB) { explode(px, r, G.cw * 1.6f, 1, 1800, SFX_CHERRYBOMB); boom_fx(px, cell_y(r) + G.rh / 2); }
             else if (p->type == PL_JALAPENO) {
-                explode(px, r, 2000, 0, 1800, -1, SFX_JALAPENO);
+                explode(px, r, 2000, 0, 1800, SFX_JALAPENO);
                 for (int k = 0; k < MAXP; k++) if (PJ[k].alive && PJ[k].kind == PJ_BOSSICE && PJ[k].row == r) PJ[k].alive = 0;   /* derrite la de hielo */
-                for (int k = 0; k < 4; k++) fx(IMG_FLAMES, G.x0 + G.cw * (1 + k * 2.3f), cell_y(r) + G.rh * 0.4f, 90, r, 1.0f);
+                for (int k = 0; k < COLS; k++) {   /* llamas (hoja 477) en toda la fila */
+                    Part *f = part(PS_FIRE, cell_x(k) + G.cw / 2, cell_y(r) + G.rh * 0.45f, 0, 0, 0, rnd(90, 110));
+                    if (f) { f->loop = 1; f->age = rnd(0, 20); f->ttl += f->age; }
+                }
             } else if (p->type == PL_DOOMSHROOM) {
-                explode(px, r, G.cw * 3.2f, 3, 1800, IMG_DOOM, SFX_DOOMSHROOM);
+                explode(px, r, G.cw * 3.2f, 3, 1800, SFX_DOOMSHROOM);
+                for (int k = 0; k < 16; k++) {
+                    float a = k * 0.3927f, v = frnd(0.3f, 0.9f);
+                    part(k & 1 ? PS_DOOMCLOUD : PS_RED, px + cosf(a) * 12, cell_y(r) + G.rh / 2 + sinf(a) * 10, cosf(a) * v, sinf(a) * v * 0.6f - 0.15f, 0, rnd(80, 120));
+                }
+                { Part *t = part(PS_DOOM, px, cell_y(r) - 4, 0, -0.08f, 0, 140); if (t) t->sc = 1.4f; }
                 crater[r][c] = 18000;
             } else if (p->type == PL_ICESHROOM) {
                 for (int i = 0; i < MAXZ; i++) if (z_hittable(&Z[i]) && Z[i].type != ZT_BOSS) { Z[i].freeze = rnd(400, 600); Z[i].chill = 2000; z_damage(&Z[i], 20, 0, 0); }
                 for (int k = 0; k < MAXP; k++) if (PJ[k].alive && PJ[k].kind == PJ_BOSSFIRE) PJ[k].alive = 0;   /* apaga la bola de fuego */
                 sfx_play(SFX_FROZEN);
+                for (int k = 0; k < 14; k++)          /* copos de la seta hielo por toda la pantalla */
+                    part(k & 1 ? PS_ICE : PS_FLAKE, G.camx + frnd(20, SCREEN_W - 20), G.camy + frnd(40, SCREEN_H - 20), 0, frnd(0.1f, 0.3f), 0, rnd(70, 110));
             }
             p->alive = 0;
         }
@@ -719,11 +825,16 @@ static void update_plant(Plant *p, int r, int c)
     case PK_MINE:
         if (p->state == 0 && --p->timer <= 0) { p->state = 1; reanim_play(&p->anim, RE_POTATOMINE, 1, 4, 0); sfx_play(SFX_DIRT_RISE); }
         else if (p->state == 1 && reanim_done(&p->anim)) { p->state = 2; reanim_play(&p->anim, RE_POTATOMINE, 5, 7, 1); }
+        else if (p->state == 3) { if (--p->timer <= 0) p->alive = 0; }
         else if (p->state == 2) {
             for (int i = 0; i < MAXZ; i++) {
                 Zombie *z = &Z[i];
                 if (z->alive && z->row == r && z->state < ZS_DYING && !z->balloon && fabsf(z->x - 6 - px) < G.cw * 0.55f) {
-                    explode(px, r, G.cw * 0.75f, 0, 1800, IMG_SPUDOW, SFX_POTATO_MINE); p->alive = 0; break;
+                    explode(px, r, G.cw * 0.75f, 0, 1800, SFX_POTATO_MINE);
+                    spud_fx(px, cell_y(r) + G.rh * 0.6f);
+                    p->state = 3; p->timer = 200;        /* queda el pure (frame 8) unos 2 s, como el J2ME (estado 11) */
+                    reanim_play(&p->anim, RE_POTATOMINE, 8, 8, 1);
+                    break;
                 }
             }
         }
@@ -842,6 +953,11 @@ static void update_projectiles(void)
                         for (int k = 0; k < MAXZ; k++) if (&Z[k] != z && z_hittable(&Z[k]) && abs(Z[k].row - z->row) <= 1 && fabsf(Z[k].x - z->x) < G.cw * 1.2f) z_damage(&Z[k], 26, 0, 0);
                     }
                     if (q->kind == PJ_KERNEL) sfx_play(SFX_KERNELPULT2);
+                    float hy = cell_y(z->row) + G.rh * 0.35f;
+                    if (q->kind == PJ_CABBAGE) { splat(PS_PEA, z->x, hy); burst(PS_GREENBIT, z->x, hy, 4, 0.8f); }
+                    else if (q->kind == PJ_MELON) { splat(PS_PEA, z->x, hy); burst(PS_GREENBIT, z->x, hy, 8, 1.1f); }
+                    else if (q->kind == PJ_KERNEL) burst(PS_YELLOWBIT, z->x, hy, 3, 0.7f);
+                    else if (q->kind == PJ_BUTTER) splat(PS_YELLOW, z->x, hy);
                 }
             }
             continue;
@@ -894,6 +1010,10 @@ static void update_projectiles(void)
                 if (z->balloon && q->kind == PJ_SPIKE) { z->balloon = 0; z->speed = 0.064f; sfx_play(SFX_BALLOON_POP); z_anim(z, zd(z)->walk_s, zd(z)->walk_e, 1); }
                 else {
                     z_damage(z, q->dmg, 1, q->kind == PJ_SNOW);
+                    static const signed char hitfx[] = { PS_PEA, PS_SNOW, PS_FLAME, PS_PUFF, PS_GREENBIT, PS_STARY, -1, -1, -1, -1, -1, -1, PS_PUFF, -1, -1 };
+                    int hs = hitfx[q->kind];
+                    if (hs == PS_GREENBIT) burst(hs, q->x, q->y, 3, 0.6f);
+                    else if (hs >= 0) { Part *h = part(hs, q->x + 4, q->y, 0, 0, 0, hs == PS_FLAME ? 30 : 24); (void)h; }
                     if (q->kind == PJ_FIRE) { z->chill = 0; for (int o = 0; o < MAXZ; o++) if (&Z[o] != z && z_hittable(&Z[o]) && Z[o].row == z->row && fabsf(Z[o].x - z->x) < G.cw * 0.6f) z_damage(&Z[o], 13, 0, 0); sfx_play(SFX_IGNITE); }
                 }
                 q->alive = 0; break;
@@ -1128,21 +1248,70 @@ static void setup_area(void)
     G.camx = 0;   /* misma vista que el J2ME: casa a la izquierda, acera a la derecha */
 }
 
-void board_start(int level, const int *sd, int ns, int has_shovel)
+/* orden de plantas del J2ME (ids 0..30 de su tabla; asi aparecen en "elige tus plantas") */
+static const signed char j2me_order[PL_COUNT] = {
+    PL_SEASHROOM, PL_TANGLEKELP, PL_SUNFLOWER, PL_PEASHOOTER, PL_WALLNUT, PL_REPEATER, PL_SNOWPEA, PL_CHERRYBOMB,
+    PL_POTATOMINE, PL_CHOMPER, PL_THREEPEATER, PL_SQUASH, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT,
+    PL_CABBAGEPULT, PL_KERNELPULT, PL_MELONPULT, PL_STARFRUIT, PL_CACTUS, PL_PUFFSHROOM, PL_SUNSHROOM, PL_FUMESHROOM,
+    PL_GRAVEBUSTER, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_HYPNOSHROOM, PL_DOOMSHROOM, PL_LILYPAD, PL_FLOWERPOT };
+
+/* reposo de cada zombi (primer rango de su animacion) para los de muestra */
+static const signed char z_idle[ZT_COUNT][2] = {
+    {0,7},{0,7},{0,7},{0,7},{0,5},{0,7},{0,3},{0,10},{0,3},{0,4},{0,4},{0,5},{0,6},{0,6},{0,5},{0,7},{0,3},{0,7},{0,7},{0,7},{0,8},{0,8} };
+
+static void setup_preview(void)
+{
+    /* posiciones (pies) de los zombis de muestra medidas en el J2ME (sombras 550 en la calle) */
+    static const short pos[9][2] = { {546,146},{507,146},{528,152},{508,208},{546,208},{582,239},{526,245},{580,270},{523,276} };
+    int types[ZT_COUNT], nt = 0;
+    for (int t = 0; t < ZT_COUNT; t++) {
+        if (t == ZT_BOSS || t == ZT_BACKUP || t == ZT_IMP || z_levels[t][lv] != '1') continue;
+        if (zombie_defs[t].flags & ZF_SWIM) continue;
+        types[nt++] = t;
+    }
+    npz = lv == 49 ? 0 : (lv < 3 ? 4 + lv : 9);
+    float dy = G.rows == 6 ? -6 : (lane[0] == LN_ROOF ? -14 : 0);
+    for (int i = 0; i < npz; i++) {
+        Zombie *z = &PZ[i]; memset(z, 0, sizeof(*z));
+        int t = i < nt ? types[nt - 1 - i] : ZT_NORMAL;
+        if (i >= nt && nt > 1 && (i & 1)) t = types[rnd(0, nt - 1)];
+        const ZombieDef *d = &zombie_defs[t];
+        z->alive = 1; z->type = t; z->dir = -1; z->x = pos[i][0] + frnd(-3, 3); z->yoff = pos[i][1] + 6 + dy;
+        z->hp = d->hp; z->helm = z->maxhelm = d->helm; z->shield = z->maxshield = d->shield;
+        reanim_play(&z->anim, d->re, z_idle[t][0], z_idle[t][1], 1);
+        z->anim.frame += frnd(0, z_idle[t][1] - z_idle[t][0]);
+        z->anim.speed = frnd(0.6f, 0.9f);
+        z_parts(z);
+    }
+}
+
+static void init_refresh(void)
+{
+    for (int i = 0; i < nseeds; i++) { int rt = plant_defs[seeds[i]].refresh; refresh[i] = rt >= 5000 ? 3500 : (rt >= 3000 ? 2000 : 0); }
+}
+
+void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
 {
     lv = level; setup_area();
     memset(P, 0, sizeof(P)); memset(Z, 0, sizeof(Z)); memset(PJ, 0, sizeof(PJ)); memset(S, 0, sizeof(S));
-    memset(FX, 0, sizeof(FX)); memset(grave, 0, sizeof(grave)); memset(crater, 0, sizeof(crater));
+    memset(PT, 0, sizeof(PT)); memset(grave, 0, sizeof(grave)); memset(crater, 0, sizeof(crater));
     reanim_unload_all(); img_unload_all(); sfx_unload_all();
-    img_load(G.bg); font_load(FONT_SMALL); font_load(FONT_BIG); font_load(FONT_NUM);
-    nseeds = ns; for (int i = 0; i < ns; i++) { seeds[i] = sd[i]; reanim_get(plant_defs[sd[i]].re); }
+    img_load(G.bg); font_load(FONT_SMALL); font_load(FONT_BIG); font_load(FONT_NUM); font_load(FONT_MED);
     conveyor = level_is_conveyor(lv); belt_n = 0; belt_timer = 200;
+    slots = nslots; has_shovel_flag = has_shovel;
+    /* semillas: todas si caben; si no, se eligen durante la intro (como el J2ME) */
+    ch_n = 0; ch_cur = 0; ch_scroll = 0;
+    for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < nav; i++) if (av[i] == j2me_order[k]) ch_list[ch_n++] = av[i];
+    choosing = !conveyor && ch_n > slots;
+    nseeds = 0;
+    if (!conveyor && !choosing) for (int i = 0; i < ch_n; i++) seeds[nseeds++] = ch_list[i];
+    for (int i = 0; i < nseeds; i++) reanim_get(plant_defs[seeds[i]].re);
+    if (choosing) for (int i = 0; i < ch_n; i++) img_load(plant_defs[ch_list[i]].packet);
     if (lv == 4) reanim_get(RE_WALLNUT);
-    if (conveyor) for (int i = 0; i < PL_COUNT; i++) if (lv != 4) { (void)i; }
     reanim_get(RE_ZOMBIE); reanim_get(RE_ZOMBIE_CHARRED);
     for (int t = 0; t < ZT_COUNT; t++) if (z_levels[t][lv] == '1') reanim_get(zombie_defs[t].re);
     shovel_ok = has_shovel;
-    for (int r = 0; r < G.rows; r++) { M[r].state = row_ok(r) ? 0 : 2; M[r].x = G.x0 - 24; }
+    for (int r = 0; r < G.rows; r++) { M[r].state = row_ok(r) ? 0 : 2; M[r].x = G.x0 - 56; }
     /* tumbas (cs.a del J2ME) */
     if (G.bg == IMG_BG_NIGHT) {
         static const signed char gtab[][6] = { { 0,0,0,1,1,2 }, { 0,0,1,1,2,3 }, { 0,1,2,2,3,3 }, { 1,2,2,2,3,3 } };
@@ -1159,11 +1328,13 @@ void board_start(int level, const int *sd, int ns, int has_shovel)
     }
     sun = conveyor ? 0 : (lv == 0 ? 150 : 50);
     suns_fallen = 0; sky_timer = 425;
-    for (int i = 0; i < ns; i++) { int rt = plant_defs[sd[i]].refresh; refresh[i] = rt >= 5000 ? 3500 : (rt >= 3000 ? 2000 : 0); }
+    init_refresh();
     mode = MODE_LAWN; held = -1; bank_sel = 0;
     cur_r = (first_row() + last_row()) / 2; cur_c = 0;
     nwaves = level_waves[lv]; wave = 0; wave_timer = 1800; huge_timer = 0; msg_timer = 0;
     state = ST_INTRO; state_timer = 0; paused = 0; result = BR_PLAYING; reward_alive = 0; reward_type = -1;
+    intro_phase = IP_WAIT; intro_t = 0; hud_off = -60; G.camx = 0;
+    setup_preview();
     static const int pre[] = { SFX_PLANT, SFX_PLANT2, SFX_POINTS, SFX_SEEDLIFT, SFX_BUZZER, SFX_SHOVEL, SFX_PAUSE, SFX_READYSETPLANT,
         SFX_TAP, SFX_SPLAT, SFX_SPLAT2, SFX_SPLAT3, SFX_CHOMP, SFX_CHOMP2, SFX_CHOMPSOFT, SFX_GULP, SFX_THROW, SFX_THROW2,
         SFX_GROAN, SFX_GROAN2, SFX_GROAN3, SFX_GROAN4, SFX_LAWNMOWER, SFX_AWOOGA, SFX_HUGEWAVE, SFX_SIREN, SFX_FINALWAVE,
@@ -1171,7 +1342,97 @@ void board_start(int level, const int *sd, int ns, int has_shovel)
         SFX_WINMUSIC, SFX_LOSEMUSIC };
     for (unsigned i = 0; i < sizeof(pre) / sizeof(pre[0]); i++) sfx_preload(pre[i]);
     music_stop();
-    sfx_play(SFX_READYSETPLANT);
+    if (choosing) music_play("data/music/choose_seeds.mp3", 1);
+}
+
+/* ---------------- intro ---------------- */
+static const float pan_out[] = { 0,1,2,3,4,6,8,10,13,17,22,28,35,43,53,65,80,91,99,105,109,112,114,116,118,120,122,124,126,128,130 };
+static const float pan_back[] = { 130,129,128,127,126,124,122,120,117,113,108,102,95,87,77,65,50,38,29,22,16,11,7,4,2,0 };
+static float table_at(const float *t, int n, float f)
+{
+    if (f <= 0) return t[0];
+    if (f >= n - 1) return t[n - 1];
+    int i = (int)f; float k = f - i;
+    return t[i] + (t[i + 1] - t[i]) * k;
+}
+static int mow_frames(void) { return 7 + 3 * (last_row() - first_row()); }
+/* posicion x del cortacesped de la fila r durante su entrada (pasos +5,+4,+4,+4,+3,+3,+2 del J2ME) */
+static float mower_entry_x(int r, float f)
+{
+    static const float cum[] = { 0, 5, 9, 13, 17, 20, 23, 25 };
+    float k = f - 3 * (last_row() - r);
+    return G.x0 - 56 + table_at(cum, 8, k);
+}
+static int ch_is_chosen(int t) { for (int i = 0; i < nseeds; i++) if (seeds[i] == t) return 1; return 0; }
+static int ch_need(void) { return ch_n < slots ? ch_n : slots; }
+static void chooser_input(void)
+{
+    int rows = (ch_n + 2) / 3;
+    if (btn_repeat(PSP_CTRL_RIGHT) && ch_cur + 1 < ch_n && ch_cur % 3 < 2) { ch_cur++; sfx_play(SFX_TAP); }
+    if (btn_repeat(PSP_CTRL_LEFT) && ch_cur % 3 > 0) { ch_cur--; sfx_play(SFX_TAP); }
+    if (btn_repeat(PSP_CTRL_DOWN) && ch_cur / 3 + 1 < rows) { ch_cur += 3; if (ch_cur >= ch_n) ch_cur = ch_n - 1; sfx_play(SFX_TAP); }
+    if (btn_repeat(PSP_CTRL_UP) && ch_cur >= 3) { ch_cur -= 3; sfx_play(SFX_TAP); }
+    if (ch_cur / 3 < ch_scroll) ch_scroll = ch_cur / 3;
+    if (ch_cur / 3 > ch_scroll + 5) ch_scroll = ch_cur / 3 - 5;
+    if (btn_pressed(PSP_CTRL_CROSS)) {
+        int t = ch_list[ch_cur], found = -1;
+        for (int i = 0; i < nseeds; i++) if (seeds[i] == t) found = i;
+        if (found >= 0) { for (int i = found; i < nseeds - 1; i++) seeds[i] = seeds[i + 1]; nseeds--; sfx_play(SFX_TAP); }
+        else if (nseeds < slots) { seeds[nseeds++] = t; sfx_play(SFX_SEEDLIFT); }
+        else sfx_play(SFX_BUZZER);
+    }
+    if (btn_pressed(PSP_CTRL_CIRCLE) && nseeds > 0) { nseeds--; sfx_play(SFX_TAP); }
+    if (btn_pressed(PSP_CTRL_START) || (btn_pressed(PSP_CTRL_TRIANGLE))) {
+        if (nseeds >= ch_need()) { sfx_play(SFX_BUTTONCLICK); intro_phase = IP_CHOOSE_OUT; intro_t = 0; }
+        else sfx_play(SFX_BUZZER);
+    }
+    if (btn_pressed(PSP_CTRL_SELECT)) result = BR_QUIT;
+}
+static void update_intro(void)
+{
+    intro_t += 100.0f / 60.0f;
+    float f = intro_t / JF;
+    for (int i = 0; i < npz; i++) reanim_update(&PZ[i].anim, 1.0f / 60.0f);
+    switch (intro_phase) {
+    case IP_WAIT:
+        if (intro_t >= 90) { intro_phase = IP_OUT; intro_t = 0; }
+        break;
+    case IP_OUT:
+        G.camx = table_at(pan_out, 31, f);
+        if (f >= 30) { intro_phase = choosing ? IP_CHOOSE : IP_HOLD; intro_t = 0; }
+        break;
+    case IP_HOLD:
+        if (f >= 16) { intro_phase = IP_BACK; intro_t = 0; }
+        break;
+    case IP_CHOOSE:
+#ifdef AUTOTEST
+        if (intro_t > 120) { nseeds = 0; for (int i = ch_n - 1; i >= 0 && nseeds < slots; i--) seeds[nseeds++] = ch_list[i]; intro_phase = IP_CHOOSE_OUT; intro_t = 0; }
+        break;
+#endif
+        chooser_input();
+        break;
+    case IP_CHOOSE_OUT:
+        if (f >= 3) {
+            intro_phase = IP_BACK; intro_t = 0;
+            for (int i = 0; i < nseeds; i++) reanim_get(plant_defs[seeds[i]].re);
+            init_refresh(); music_stop();
+        }
+        break;
+    case IP_BACK:
+        G.camx = table_at(pan_back, 26, f);
+        if (f >= 25) { intro_phase = IP_MOW; intro_t = 0; G.camx = 0; }
+        break;
+    case IP_MOW: {
+        static const float hud_tab[] = { -60,-48,-38,-30,-23,-17,-12,-8,-5,-2,0,1,0 };
+        hud_off = table_at(hud_tab, 13, f);
+        for (int r = 0; r < G.rows; r++) if (M[r].state == 0) M[r].x = mower_entry_x(r, f);
+        if (f >= mow_frames() && f >= 12) { intro_phase = IP_READY; intro_t = 0; hud_off = 0; sfx_play(SFX_READYSETPLANT); }
+        break;
+    }
+    case IP_READY:
+        if (intro_t >= 160) { state = ST_PLAY; state_timer = 0; music_play(G.music, 1); }
+        break;
+    }
 }
 
 int board_reward(void) { return reward_type; }
@@ -1179,7 +1440,7 @@ int board_reward(void) { return reward_type; }
 /* ---------------- control ---------------- */
 static void board_input(void)
 {
-    if (btn_pressed(PSP_CTRL_START)) {
+    if (btn_pressed(PSP_CTRL_START) && !(state == ST_INTRO && intro_phase <= IP_CHOOSE_OUT && choosing)) {
         paused = !paused; pause_sel = 0;
         if (paused) sfx_stop_all();
         sfx_play(SFX_PAUSE); music_set_volume(paused ? 96 : 256);
@@ -1267,6 +1528,36 @@ int board_update(void)
     }
     if (state == ST_PLAY && state_timer > 170) { for (int i = 0; i < MAXZ; i++) if (Z[i].alive && !Z[i].hypno && Z[i].row != 4) Z[i].speed = 0.12f; }
 #endif
+#if defined(AUTOTEST) && defined(AT_FX)
+    /* prueba de efectos: patatapum armada, petacereza, guisantes, coltapulta, humoseta, jalapeno */
+    if (state == ST_PLAY && state_timer == 20) {
+        static const int pl[] = { PL_POTATOMINE, PL_CHERRYBOMB, PL_PEASHOOTER, PL_CABBAGEPULT, PL_FUMESHROOM, PL_MELONPULT, PL_SNOWPEA, PL_KERNELPULT };
+        for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
+        plant_at(0, 5, PL_POTATOMINE); P[0][5][1].timer = 1;
+        plant_at(1, 0, PL_PEASHOOTER); plant_at(1, 1, PL_SNOWPEA);
+        plant_at(2, 0, PL_CABBAGEPULT); plant_at(2, 1, PL_MELONPULT); plant_at(3, 0, PL_KERNELPULT);
+        plant_at(4, 2, PL_FUMESHROOM); P[4][2][1].sleeping = 0;
+        for (int r = 0; r < 5; r++) for (int k = 0; k < 2; k++) { Zombie *z = spawn_zombie(k ? ZT_CONE : ZT_BUCKET, r, cell_x(7 + k) + 5); if (z) z->speed *= 2; }
+    }
+    if (state == ST_PLAY && state_timer == 420) plant_at(3, 6, PL_CHERRYBOMB);
+#endif
+#if defined(AUTOTEST) && defined(AT_PZOO)
+    /* todas las plantas a la vez para revisar sus animaciones */
+    if (state == ST_PLAY && state_timer == 20) {
+        int k = 0;
+        for (int t = 0; t < PL_COUNT; t++) {
+            if (t == PL_LILYPAD || t == PL_FLOWERPOT || t == PL_GRAVEBUSTER) continue;
+            reanim_get(plant_defs[t].re);
+            int r = k / 7, c = 1 + k % 7; k++;
+            if (r >= G.rows) break;
+            if (lane[r] == LN_WATER && !(plant_defs[t].flags & PF_AQUATIC)) { reanim_get(RE_LILYPAD); plant_at(r, c, PL_LILYPAD); }
+            plant_at(r, c, t); P[r][c][1].sleeping = 0;
+            if (plant_defs[t].kind == PK_INSTANT) { P[r][c][1].anim.loop = 1; P[r][c][1].anim.speed = 0.5f; P[r][c][1].type = PL_FLOWERPOT; }
+        }
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY && state_timer == 200) { for (int r = 0; r < G.rows; r++) spawn_zombie(ZT_NORMAL, r, cell_x(8) + 10); }
+#endif
 #if defined(AUTOTEST) && defined(AT_ZOO)
     if (state == ST_PLAY && state_timer == 170) {
         for (int t = 0; t < ZT_COUNT; t++) if (t != ZT_BOSS && t != ZT_DUCKY && t != ZT_SNORKEL && t != ZT_DOLPHIN) {
@@ -1276,7 +1567,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#ifdef AUTOTEST
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -1293,10 +1584,7 @@ int board_update(void)
     if (frame % 600 == 0) { int nz = 0; for (int i = 0; i < MAXZ; i++) nz += Z[i].alive; printf("lv%d f%d st%d wave%d/%d z%d sun%d\n", lv, frame, state, wave, nwaves, nz, sun); }
     if (state == ST_WONWAIT && reward_alive && state_timer > 60) { reward_alive = 0; result = BR_WON; }
 #endif
-    if (state == ST_INTRO) {
-        if (state_timer == 160) { state = ST_PLAY; music_play(G.music, 1); }
-        return BR_PLAYING;
-    }
+    if (state == ST_INTRO) { update_intro(); return result; }
     if (state == ST_LOST) {
         if (state_timer > 150 && btn_pressed(PSP_CTRL_CROSS)) return BR_LOST;
         return BR_PLAYING;
@@ -1322,7 +1610,7 @@ int board_update(void)
         update_projectiles();
         update_zombies();
         if (state == ST_PLAY) update_waves();
-        for (int i = 0; i < MAXFX; i++) if (FX[i].alive && --FX[i].ttl <= 0) FX[i].alive = 0;
+        update_parts();
         if (msg_timer > 0) msg_timer--;
     }
     return BR_PLAYING;
@@ -1352,20 +1640,40 @@ static float pot_lift(int r, int c)
     return b->type == PL_LILYPAD ? -h * 0.35f : -h * 0.62f;
 }
 
+static void draw_progress(void)
+{
+    /* barra de progreso de oleadas con banderas y cabeza de zombi (piezas 543/282 del J2ME) */
+    char buf[32];
+    float bx = SCREEN_W - 112, by = SCREEN_H - 14, bw = 100;
+    float prog = nwaves ? (float)wave / nwaves : 0;
+    gfx_rect(bx - 2, by - 2, bw + 4, 10, 0xC0202020);
+    gfx_rect(bx, by, bw, 6, 0xFF203040);
+    gfx_rect(bx + bw * (1 - prog), by, bw * prog, 6, 0xFF20C040);
+    for (int w = 0; w < nwaves; w++) if (is_flag_wave(w)) {
+        float fx = bx + bw * (1 - (float)(w + 1) / nwaves);
+        gfx_draw(IMG_PFLAG, fx - 2, by - 12 + (w < wave ? -3 : 0), WHITE, 0);
+    }
+    gfx_draw(IMG_ZHEAD, bx + bw * (1 - prog) - 8, by - 6, WHITE, 0);
+    snprintf(buf, sizeof(buf), "NIVEL %d-%d", lv / 10 + 1, lv % 10 + 1);
+    text_draw(FONT_SMALL, bx - 4 - text_width(FONT_SMALL, buf), SCREEN_H - 20, buf, 0xFFFFFFFF);
+}
+
 static void draw_bank(void)
 {
     char buf[32];
+    if (state == ST_INTRO && intro_phase < IP_MOW) return;
+    float yo = hud_off;
     if (!conveyor) {
-        gfx_draw(IMG_SUNBAR, 2, 4, WHITE, 0);
+        gfx_draw(IMG_SUNBAR, 2, 4 + yo, WHITE, 0);
         snprintf(buf, sizeof(buf), "%d", sun);
-        text_draw_centered(FONT_SMALL, 45, 3, buf, 0xFF000000);
+        text_draw_centered(FONT_SMALL, 45, 3 + yo, buf, 0xFF000000);
     }
     int nb = bank_count();
     float x0 = conveyor ? 4 : 70;
-    if (conveyor) gfx_rect(0, 0, SCREEN_W, 38, 0x90202020);
+    if (conveyor) gfx_rect(0, 0 + yo, SCREEN_W, 38, 0x90202020);
     for (int i = 0; i < nb; i++) {
         int t = seed_type(i);
-        float x = conveyor ? belt_x[i] : x0 + i * 49, y = 2;
+        float x = conveyor ? belt_x[i] : x0 + i * 49, y = 2 + yo;
         if (i == held) y += 4;
         int img = t == PL_BOWLNUT ? plant_defs[PL_WALLNUT].packet : plant_defs[t].packet;
         gfx_draw(img, x, y, bank_ready(i) ? WHITE : 0xFF808080, 0);
@@ -1376,12 +1684,92 @@ static void draw_bank(void)
             gfx_rect(x - 1, y - 1, 2, 35, c); gfx_rect(x + 46, y - 1, 2, 35, c);
         }
     }
-    if (shovel_ok && !conveyor) gfx_draw(IMG_SHOVEL, x0 + nseeds * 49 + 4, 0, mode == MODE_SHOVEL ? 0xFF80FFFF : WHITE, 0);
-    float prog = nwaves ? (float)wave / nwaves : 0;
-    gfx_rect(SCREEN_W - 112, SCREEN_H - 14, 104, 10, 0xA0000000);
-    gfx_rect(SCREEN_W - 110, SCREEN_H - 12, 100 * prog, 6, 0xFF20D040);
-    snprintf(buf, sizeof(buf), "NIVEL %d-%d", lv / 10 + 1, lv % 10 + 1);
-    text_draw(FONT_SMALL, SCREEN_W - 112, SCREEN_H - 34, buf, 0xFFFFFFFF);
+    if (shovel_ok && !conveyor) gfx_draw(IMG_SHOVEL, x0 + nseeds * 49 + 4, 0 + yo, mode == MODE_SHOVEL ? 0xFF80FFFF : WHITE, 0);
+    if (state != ST_INTRO) draw_progress();
+}
+
+/* "¡ELIGE TUS PLANTAS!" del J2ME (clase c): columna de la izquierda con las elegidas y panel con la
+ * cuadricula de 3 columnas. Se dibuja en coordenadas del J2ME (480x320) con la escala vertical. */
+#define IMG_CH_COLTOP 430
+#define IMG_CH_COLTILE 481
+#define IMG_CH_CORNER 386
+#define IMG_CH_TOP 214
+#define IMG_CH_SIDE 157
+#define IMG_CH_BOTTOM 203
+#define IMG_CH_BG 375
+#define IMG_CH_UP 377
+#define IMG_CH_DOWN 308
+#define IMG_OK 99
+static void draw_chooser(void)
+{
+    float slide = 1;
+    if (intro_phase == IP_OUT) slide = 0;
+    else if (intro_phase == IP_CHOOSE) slide = intro_t / (2 * JF) > 1 ? 1 : intro_t / (2 * JF);
+    else if (intro_phase == IP_CHOOSE_OUT) slide = 1 - intro_t / (3 * JF);
+    if (slide <= 0) return;
+    gfx_set_vscale(J2ME_VS);
+    float px = 54 - (1 - slide) * 240, lx = -5 - (1 - slide) * 60;
+    /* columna de semillas elegidas */
+    gfx_draw(IMG_CH_COLTOP, lx, 0, WHITE, 0);
+    for (int y = 9; y < 311; y += 5) gfx_draw(IMG_CH_COLTILE, lx, y, WHITE, 0);
+    gfx_draw(IMG_CH_COLTOP, lx, 311, WHITE, GFX_FLIPY);
+    for (int i = 0; i < slots; i++) {
+        float y = 5 + i * 35;
+        if (i < nseeds) gfx_draw(plant_defs[seeds[i]].packet, lx + 4, y, WHITE, 0);
+        else gfx_rect(lx + 5, y + 1, 45, 31, 0x50000000);
+    }
+    u32 okc = nseeds >= ch_need() ? ((frame / 10) & 1 ? WHITE : 0xFFB0FFFF) : 0xFF707070;
+    gfx_draw(IMG_OK, lx + 9, 297, okc, 0);
+    /* panel */
+    gfx_draw(IMG_CH_CORNER, px, 18, WHITE, 0);
+    gfx_draw(IMG_CH_CORNER, px + 161, 18, WHITE, GFX_FLIPX);
+    for (int x = 16; x < 161; x += 8) gfx_draw(IMG_CH_TOP, px + x, 18, WHITE, 0);
+    for (int ty = 54; ty <= 260; ty += 42) for (int k = 0; k < 4; k++) gfx_draw(IMG_CH_BG, px + (k < 3 ? 16 + k * 42 : 135), ty, WHITE, 0);
+    gfx_draw(IMG_CH_BG, px + 16, 260, WHITE, 0);
+    for (int y = 54; y < 286; y += 8) { gfx_draw(IMG_CH_SIDE, px, y, WHITE, 0); gfx_draw(IMG_CH_SIDE, px + 161, y, WHITE, GFX_FLIPX); }
+    gfx_draw(IMG_CH_BOTTOM, px, 286, WHITE, 0);
+    gfx_draw(IMG_CH_BOTTOM, px + 161, 286, WHITE, GFX_FLIPX);
+    for (int x = 16; x < 161; x += 8) gfx_rect(px + x, 286, 8, 16, 0xFF0C2244);
+    /* titulo (marquesina si no cabe, como el J2ME) */
+    const char *title = "¡ELIGE TUS PLANTAS!";
+    int tw = text_width(FONT_MED, title);
+    gfx_clip((int)px + 16, 18, 145, 36);
+    float tx = tw <= 145 ? px + 16 + (145 - tw) / 2.0f : px + 16 - fmodf(frame * 0.6f, tw + 40) + 40;
+    text_draw(FONT_MED, tx, 21, title, WHITE);
+    if (tw > 145) text_draw(FONT_MED, tx + tw + 40, 21, title, WHITE);
+    gfx_noclip();
+    /* cuadricula */
+    gfx_clip((int)px, 54, 177, 248);
+    for (int i = 0; i < ch_n; i++) {
+        int row = i / 3 - ch_scroll;
+        if (row < 0 || row > 5) continue;
+        float x = px + 11 + (i % 3) * 54, y = 54 + row * 40;
+        int t = ch_list[i];
+        int bad = (plant_defs[t].flags & PF_AQUATIC) && G.rows < 6;
+        gfx_draw(plant_defs[t].packet, x, y, ch_is_chosen(t) || bad ? 0xFF505050 : WHITE, 0);
+        if (i == ch_cur && intro_phase == IP_CHOOSE) {
+            u32 c = (frame / 8) & 1 ? 0xFF00FFFF : 0xFF00C0FF;
+            gfx_rect(x - 2, y - 2, 51, 2, c); gfx_rect(x - 2, y + 33, 51, 2, c);
+            gfx_rect(x - 2, y - 2, 2, 37, c); gfx_rect(x + 47, y - 2, 2, 37, c);
+        }
+    }
+    gfx_noclip();
+    int rows = (ch_n + 2) / 3;
+    if (ch_scroll > 0) gfx_draw(IMG_CH_UP, px + 84, 46, WHITE, 0);
+    if (ch_scroll + 6 < rows) gfx_draw(IMG_CH_DOWN, px + 84, 290, WHITE, 0);
+    gfx_set_vscale(1);
+    /* ayuda (en la calle, a la derecha) */
+    if (intro_phase == IP_CHOOSE && ch_n) {
+        char b[64]; int t = ch_list[ch_cur];
+        snprintf(b, sizeof(b), "%s", plant_defs[t].name);
+        text_draw_centered(FONT_SMALL, 380, 8, b, WHITE);
+        snprintf(b, sizeof(b), "COSTE: %d", plant_defs[t].cost);
+        text_draw_centered(FONT_SMALL, 380, 26, b, 0xFF80FFFF);
+        snprintf(b, sizeof(b), "%d/%d", nseeds, ch_need());
+        text_draw_centered(FONT_SMALL, 380, 216, b, 0xFF00FFFF);
+        text_draw_centered(FONT_SMALL, 380, 234, "X ELEGIR  O QUITAR", 0xFFE0E0E0);
+        text_draw_centered(FONT_SMALL, 380, 252, "START ¡A JUGAR!", nseeds >= ch_need() ? 0xFF00FFFF : 0xFF909090);
+    }
 }
 
 static void draw_zombie(Zombie *z, float base)
@@ -1426,9 +1814,10 @@ void board_draw(void)
     if (lv == 4) gfx_rect(sxw(cell_x(3)) - 1, syw(G.y0), 2, G.rows * G.rh * G.ws, 0xC02020FF);   /* linea roja de bolos */
     for (int r = 0; r < G.rows; r++) {
         float base = cell_y(r) + G.rh - 3;
-        if (M[r].state < 2) {
+        if (M[r].state < 2 && (state != ST_INTRO || intro_phase >= IP_MOW)) {
+            /* como el J2ME: 35x35 con la parte de arriba 6 px por encima de la casilla */
             int img = lane[r] == LN_ROOF ? IMG_ROOFCLEANER : IMG_MOWER;
-            draw_world(img, M[r].x, base - img_h(img) + 4, WHITE);
+            draw_world(img, M[r].x, cell_y(r) + G.rh * 0.5f - (lane[r] == LN_ROOF ? 14 : 24), WHITE);
         }
         for (int c = 0; c < COLS; c++) {
             if (grave[r][c]) draw_world_c(IMG_GRAVE1 + grave[r][c] - 1, cell_x(c) + G.cw / 2, base - 14, 1, WHITE);
@@ -1465,9 +1854,16 @@ void board_draw(void)
             draw_world_c(img, q->x, q->y, sc, WHITE);
         }
     }
-    for (int k = 0; k < 15 && G.camx > 0 && lane[0] != LN_ROOF; k++) {   /* seto solo si la camara deja ver la calle */
-        float by = G.camy - 8 + k * 16.5f;
-        { u32 bc = G.night ? ((k & 1) ? 0xFF606060 : 0xFF707070) : ((k & 1) ? 0xFFE0E0E0 : WHITE); draw_world(IMG_BUSH, bush_x() + ((k & 1) ? 6 : -2) + ((k % 3) == 2 ? 4 : 0), by, bc); }
+    if (state == ST_INTRO && intro_phase < IP_MOW) {      /* zombis de muestra en la calle, de atras hacia delante */
+        int ord[12];
+        for (int i = 0; i < npz; i++) ord[i] = i;
+        for (int i = 1; i < npz; i++) for (int k = i; k > 0 && PZ[ord[k]].yoff < PZ[ord[k - 1]].yoff; k--) { int t = ord[k]; ord[k] = ord[k - 1]; ord[k - 1] = t; }
+        for (int i = 0; i < npz; i++) {
+            Zombie *z = &PZ[ord[i]];
+            if (sxw(z->x) < -40) continue;
+            gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(z->yoff), 28, 11, 0.5f * G.ws, 0.5f * G.ws, 0, 0x60FFFFFF, 0);
+            draw_anim_at(&z->anim, z->x, z->yoff + 1, WHITE, 0);
+        }
     }
     for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].type == ZT_BOSS && Z[i].anim.def) {
         /* Dr. Zombi (Zombistein robot): el J2ME solo muestra piernas y brazo; origen a la derecha */
@@ -1477,7 +1873,7 @@ void board_draw(void)
         gfx_rect(SCREEN_W - 112, SCREEN_H - 26, 104, 8, 0xA0000000);
         gfx_rect(SCREEN_W - 110, SCREEN_H - 24, 100 * hpf, 4, 0xFF2020FF);
     }
-    for (int i = 0; i < MAXFX; i++) if (FX[i].alive) draw_world_c(FX[i].img, FX[i].x, FX[i].y, FX[i].sx, WHITE);
+    draw_parts();
     /* cursor de esquinas naranjas */
     if (mode != MODE_BANK && state == ST_PLAY) {
         float cx = sxw(cell_x(cur_c)), cy = syw(cell_y(cur_r)), cw = G.cw * G.ws, ch = G.rh * G.ws, L8 = 8;
@@ -1517,8 +1913,9 @@ void board_draw(void)
         else snprintf(buf, sizeof(buf), "%s  (%d)", plant_defs[t].name, plant_defs[t].cost);
         text_draw_centered(FONT_SMALL, SCREEN_W / 2, 40, buf, WHITE);
     }
-    if (state == ST_INTRO) {
-        const char *t = state_timer < 55 ? TXT_READY : (state_timer < 110 ? TXT_SET : TXT_PLANT);
+    if (state == ST_INTRO && choosing && intro_phase >= IP_CHOOSE && intro_phase <= IP_CHOOSE_OUT) draw_chooser();
+    if (state == ST_INTRO && intro_phase == IP_READY) {
+        const char *t = intro_t < 55 ? TXT_READY : (intro_t < 110 ? TXT_SET : TXT_PLANT);
         text_draw_centered(FONT_BIG, SCREEN_W / 2, 120, t, 0xFF2020FF);
     }
     if (msg_timer > 0) {

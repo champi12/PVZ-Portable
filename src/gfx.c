@@ -41,6 +41,9 @@ static int pak_count;
 static SceUID pak_fd = -1;
 static u32 mem_used;
 static const void *cur_tex;
+static float vsy = 1.0f;     /* escala vertical global (vista J2ME 480x320 -> 480x272) */
+void gfx_set_vscale(float s) { vsy = s; }
+float gfx_vscale(void) { return vsy; }
 
 typedef struct { float u, v; u32 color; float x, y, z; } Vtx;
 
@@ -101,7 +104,10 @@ void gfx_begin(u32 clear_color)
 static void at_capture(void *fb)
 {
     static int n;
-    if (++n % AT_SHOT_EVERY) return;
+#ifndef AT_SHOT_FROM
+#define AT_SHOT_FROM 0
+#endif
+    if (++n % AT_SHOT_EVERY || n < AT_SHOT_FROM) return;
     char name[32];
     snprintf(name, sizeof(name), "shot%07d.raw", n);
     SceUID f = sceIoOpen(name, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
@@ -201,7 +207,7 @@ static void draw_src_rect(int id, int sx, int sy, int sw, int sh, float x, float
         int x1 = (sx + sw) < (t->x + t->w) ? (sx + sw) : (t->x + t->w);
         int y1 = (sy + sh) < (t->y + t->h) ? (sy + sh) : (t->y + t->h);
         if (x0 >= x1 || y0 >= y1) continue;
-        bind_tile(id, t, 0);
+        bind_tile(id, t, vsy != 1.0f);
         /* posicion en pantalla (con espejo respecto al rect pedido) */
         float dx0 = (flags & GFX_FLIPX) ? x + (sx + sw - x1) : x + (x0 - sx);
         float dy0 = (flags & GFX_FLIPY) ? y + (sy + sh - y1) : y + (y0 - sy);
@@ -216,8 +222,8 @@ static void draw_src_rect(int id, int sx, int sy, int sw, int sh, float x, float
             float fu0, fu1;
             if (flags & GFX_FLIPX) { fu0 = u0 - s; fu1 = u0 - s - sl; }
             else { fu0 = u0 + s; fu1 = u0 + s + sl; }
-            v[0].u = fu0; v[0].v = v0; v[0].color = color; v[0].x = dx0 + s; v[0].y = dy0; v[0].z = 0;
-            v[1].u = fu1; v[1].v = v1; v[1].color = color; v[1].x = dx0 + s + sl; v[1].y = dy0 + (y1 - y0); v[1].z = 0;
+            v[0].u = fu0; v[0].v = v0; v[0].color = color; v[0].x = dx0 + s; v[0].y = dy0 * vsy; v[0].z = 0;
+            v[1].u = fu1; v[1].v = v1; v[1].color = color; v[1].x = dx0 + s + sl; v[1].y = (dy0 + (y1 - y0)) * vsy; v[1].z = 0;
             sceGuDrawArray(GU_SPRITES, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, 0, v);
         }
     }
@@ -238,7 +244,7 @@ void gfx_draw_ex(int id, float x, float y, float ax, float ay,
 {
     if (id < 0 || id >= pak_count) return;
     if (!images[id].block && img_load(id) != 0) return;
-    if (sx == 1.0f && sy == 1.0f && rot == 0.0f) { gfx_draw(id, x - ax, y - ay, color, flags); return; }
+    if (sx == 1.0f && sy == 1.0f && rot == 0.0f && vsy == 1.0f) { gfx_draw(id, x - ax, y - ay, color, flags); return; }
     PakEntry *e = &entries[id];
     Image *im = &images[id];
     flags ^= e->flip;
@@ -257,7 +263,7 @@ void gfx_draw_ex(int id, float x, float y, float ax, float ay,
             if (flags & GFX_FLIPY) py = e->h - py;
             px = (px - ax) * sx; py = (py - ay) * sy;
             v[k].x = x + px * c - py * s;
-            v[k].y = y + px * s + py * c;
+            v[k].y = (y + px * s + py * c) * vsy;
             v[k].z = 0; v[k].u = tu[k]; v[k].v = tv[k]; v[k].color = color;
         }
         sceGuDrawArray(GU_TRIANGLE_STRIP, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 4, 0, v);
@@ -268,8 +274,8 @@ void gfx_rect(float x, float y, float w, float h, u32 color)
 {
     sceGuDisable(GU_TEXTURE_2D);
     Vtx *v = (Vtx *)sceGuGetMemory(2 * sizeof(Vtx));
-    v[0].u = v[0].v = 0; v[0].color = color; v[0].x = x; v[0].y = y; v[0].z = 0;
-    v[1].u = v[1].v = 0; v[1].color = color; v[1].x = x + w; v[1].y = y + h; v[1].z = 0;
+    v[0].u = v[0].v = 0; v[0].color = color; v[0].x = x; v[0].y = y * vsy; v[0].z = 0;
+    v[1].u = v[1].v = 0; v[1].color = color; v[1].x = x + w; v[1].y = (y + h) * vsy; v[1].z = 0;
     sceGuDrawArray(GU_SPRITES, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, 0, v);
     sceGuEnable(GU_TEXTURE_2D);
 }
@@ -281,7 +287,7 @@ void gfx_draw_affine(int id, float ox, float oy, float a, float b, float c, floa
     PakEntry *e = &entries[id];
     Image *im = &images[id];
     int flip = e->flip;
-    int lin = !(a == 1.0f && b == 0.0f && c == 0.0f && d == 1.0f);
+    int lin = !(a == 1.0f && b == 0.0f && c == 0.0f && d == 1.0f) || vsy != 1.0f;
     for (int i = 0; i < e->ntiles; i++) {
         PakTile *t = &im->tiles[i];
         bind_tile(id, t, lin);
@@ -295,7 +301,7 @@ void gfx_draw_affine(int id, float ox, float oy, float a, float b, float c, floa
             if (flip & GFX_FLIPX) u = e->w - u;
             if (flip & GFX_FLIPY) w = e->h - w;
             v[k].x = ox + a * u + c * w;
-            v[k].y = oy + b * u + d * w;
+            v[k].y = (oy + b * u + d * w) * vsy;
             v[k].z = 0; v[k].u = tu[k]; v[k].v = tv[k]; v[k].color = color;
         }
         sceGuDrawArray(GU_TRIANGLE_STRIP, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 4, 0, v);
@@ -366,12 +372,13 @@ void text_draw_centered(int font, float cx, float y, const char *s, u32 color)
 
 void gfx_clip(int x, int y, int w, int h)
 {
-    int x1 = x + w, y1 = y + h;
+    int x1 = x + w, y1 = (int)((y + h) * vsy + 0.5f);
+    y = (int)(y * vsy);
     if (x < 0) x = 0;
     if (y < 0) y = 0;
     if (x1 > SCREEN_W) x1 = SCREEN_W;
     if (y1 > SCREEN_H) y1 = SCREEN_H;
     if (x1 <= x || y1 <= y) { x = y = 0; x1 = y1 = 1; }
-    sceGuScissor(x, y, x1, y1);
+    sceGuScissor(x, y, x1 - x, y1 - y);
 }
 void gfx_noclip(void) { sceGuScissor(0, 0, SCREEN_W, SCREEN_H); }

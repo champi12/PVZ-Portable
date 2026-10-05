@@ -7,6 +7,11 @@ versión de PC**. Motor propio en C (sceGu + sceMp3, sin SDL) a **60 fps**.
 * Vista del jardín igual que el J2ME (480×320 a 1:1): la casa a la izquierda, el césped
   desde x=171 y la acera a la derecha, por donde entran los zombis.
 * Sin pantallas de carga al entrar en un nivel ni entre niveles.
+* Como el J2ME: menú de la lápida (aventura, opciones, almanaque, elegir nivel, acerca de),
+  intro de cada nivel con la cámara yendo a la calle para ver los zombis, elección de
+  plantas en el panel "¡ELIGE TUS PLANTAS!", cortacésped que entran rodando y la barra de
+  semillas que baja, y efectos de partículas del J2ME (¡SPUDOW!, ¡POWIE!, ¡DOOM!, llamas,
+  humo, salpicaduras de guisante, trozos de cono y cubo...).
 * 50 niveles de la aventura del J2ME, 31 plantas y 21 zombis con valores del PC.
 * Objetivo: PSP-1000 (32 MB, 333 MHz).
 
@@ -29,6 +34,11 @@ El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
 | START | Pausa |
 
 Los soles se recogen solos al pasar el cursor cerca.
+
+**¡Elige tus plantas!** (cuando tienes más plantas que huecos): cruceta para moverte, ✕ elige o
+quita, ◯ quita la última, START (o △) empieza la partida, SELECT vuelve al menú.
+
+**Menú**: cruceta y ✕; ◯ va a "salir". En el almanaque, ◀ ▶ pasan de ficha y ▲ ▼ desplazan el texto.
 
 ## Compilar
 

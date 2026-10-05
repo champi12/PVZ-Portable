@@ -36,6 +36,11 @@ void gfx_rect(float x, float y, float w, float h, u32 color);
 /* Dibujo con matriz afin (para animaciones Reanim): pixel (u,v) -> (ox + a*u + c*v, oy + b*u + d*v) */
 void gfx_draw_affine(int id, float ox, float oy, float a, float b, float c, float d, u32 color);
 
+/* Escala vertical global: 272/320 dibuja pantallas pensadas para 480x320 (coordenadas del J2ME) */
+#define J2ME_VS (272.0f / 320.0f)
+void gfx_set_vscale(float s);
+float gfx_vscale(void);
+
 void gfx_clip(int x, int y, int w, int h);   /* recorte (pantalla) */
 void gfx_noclip(void);
 
