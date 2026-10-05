@@ -31,16 +31,20 @@ LIBS := -lstdc++ -lm -lpspaudio -lpsppower -lpsputility -lpsprtc
 BUILD_PRX := 1
 PSP_FW_VERSION := 500
 
-EXTRA_TARGETS := $(BUILD)/EBOOT.PBP
+EXTRA_TARGETS := $(BUILD)/ICON0.PNG $(BUILD)/EBOOT.PBP
 PSP_EBOOT := $(BUILD)/EBOOT.PBP
 PSP_EBOOT_SFO := $(BUILD)/PARAM.SFO
 PSP_EBOOT_TITLE := Plants vs. Zombies
-ifneq ($(wildcard $(BUILD)/ICON0.PNG),)
 PSP_EBOOT_ICON := $(BUILD)/ICON0.PNG
-endif
 
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+$(BUILD)/ICON0.PNG: $(JAR) tools/make_icon.py
+	@mkdir -p $(dir $@)
+	python3 tools/make_icon.py $(JAR) $@
+
+$(BUILD)/EBOOT.PBP: $(BUILD)/ICON0.PNG
 
 $(BUILD)/gen/%.o: $(GEN)/%.cpp runtime/jvm.h
 	@mkdir -p $(dir $@)
