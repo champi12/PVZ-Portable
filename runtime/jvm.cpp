@@ -153,6 +153,9 @@ void gc_collect() {
     }
     g_heap_bytes -= freed;
     g_bytes_since_gc = 0;
+    static int dbg = -1;
+    if (dbg < 0) dbg = getenv("PVZ_GC_DEBUG") != nullptr;
+    if (dbg) fprintf(stderr, "[gc] live %u KB, freed %u KB\n", (unsigned)(g_heap_bytes / 1024), (unsigned)(freed / 1024));
     g_gc_requested = false;
 }
 

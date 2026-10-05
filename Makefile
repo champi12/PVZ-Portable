@@ -25,8 +25,11 @@ CXXFLAGS := $(OPT) -std=gnu++17 -fwrapv -fno-strict-aliasing -Wno-invalid-offset
             $(shell sdl2-config --cflags)
 LDLIBS += $(shell sdl2-config --libs) -lm -lpthread
 
-all: $(GEN)/.stamp build/resources.bin
+all: gen
 	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) $(BUILD)/pvz
+
+# Translation stage, shared with Makefile.psp
+gen: $(GEN)/.stamp build/resources.bin
 
 # 1. mini CLDC/MIDP class library
 $(LIBCLS)/.stamp: $(JAVA_SRC)
@@ -69,4 +72,4 @@ $(BUILD)/%.o: %.cpp $(GEN)/.stamp $(wildcard runtime/*.h)
 clean:
 	rm -rf build
 
-.PHONY: all clean
+.PHONY: all gen clean

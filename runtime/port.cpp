@@ -45,8 +45,7 @@ struct KeyMap {
 static const KeyMap KEYS[] = {
     {PAD_CIRCLE, -7},
     {PAD_TRIANGLE, -6},
-    {PAD_START, -6},
-    {PAD_SELECT, -7},
+    {PAD_START, -7},
 };
 
 static void update_input() {
@@ -146,7 +145,10 @@ static const char* CURSOR[] = {
     "        ##  ",
 };
 
+static int64_t g_last_present = 0;
+
 static void compose_and_show() {
+    g_last_present = platform_time_ms();
     memcpy(g_out, g_frame, sizeof g_out);
     if (g_cursor_visible && game_wants_cursor()) {
         int x0 = (int)g_cx, y0 = (int)g_cy;
@@ -172,14 +174,22 @@ void port_present(uint32_t* pixels) {
 }
 
 // Thread.sleep(): keep the cursor responsive while the game waits between frames.
+// The game logic advances once per frame, so holding L halves the frame delay (x2 speed).
 void port_sleep(int ms) {
+    if (g_prev_buttons & PAD_L) ms /= 2;
     int64_t end = platform_time_ms() + ms;
     for (;;) {
-        int64_t left = end - platform_time_ms();
+        int64_t now = platform_time_ms();
+        int64_t left = end - now;
         if (left <= 0) break;
-        int step = left > 16 ? 16 : (int)left;
-        platform_sleep_ms(step);
+        float ox = g_cx, oy = g_cy;
+        bool was_down = g_ptr_down;
         update_input();
-        if (g_have_frame) compose_and_show();
+        bool dirty = ox != g_cx || oy != g_cy || was_down != g_ptr_down;
+        if (dirty && g_have_frame && now - g_last_present >= 15 && left > 12) {
+            compose_and_show();
+            continue;
+        }
+        platform_sleep_ms(left > 8 ? 8 : (int)left);
     }
 }

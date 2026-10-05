@@ -834,10 +834,11 @@ class MethodTranslator:
         d = len(st)
         key = (self.cf.name, self.m.name + self.m.desc, ins.pc)
         if key in self.world.const_patches:
-            if self.stack_effect(ins, list(st)) != st + ['i']:
-                raise TranslateError('constant patch at %s is not an int push' % (key,))
+            after = self.stack_effect(ins, list(st))
+            if after not in (st + ['i'], st + ['j']):
+                raise TranslateError('constant patch at %s is not an int/long push' % (key,))
             self.world.const_patches_used.add(key)
-            return '%s = %d; /* patched */' % (self.sv(d, 'i'), self.world.const_patches[key])
+            return '%s = %d; /* patched */' % (self.sv(d, after[-1]), self.world.const_patches[key])
         sv = self.sv
         T = {'i': 'i', 'l': 'j', 'f': 'f', 'd': 'd', 'a': 'a'}
         world = self.world
