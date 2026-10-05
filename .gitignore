@@ -1,0 +1,5 @@
+build/
+*.jar
+saves/
+*.pyc
+__pycache__/
