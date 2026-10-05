@@ -7,6 +7,8 @@
 #include "port.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 enum { EV_KEY_DOWN = 1, EV_KEY_UP = 2, EV_PTR_DOWN = 3, EV_PTR_UP = 4, EV_PTR_DRAG = 5 };
@@ -131,6 +133,24 @@ static void update_input() {
 int port_poll_events(int32_t* buf, int max) {
     update_input();
     int n = g_queue_len < max ? g_queue_len : max;
+    // The game samples the touch state once per logic frame (166 ms), so only one press or
+    // release is delivered per frame; otherwise quick taps would be lost.
+    int transitions = 0;
+    for (int i = 0; i < n; i++) {
+        int t = g_queue[i * 3];
+        if (t == EV_PTR_DOWN || t == EV_PTR_UP) {
+            if (++transitions == 2) {
+                n = i;
+                break;
+            }
+        }
+    }
+    static int dbg = -1;
+    if (dbg < 0) dbg = getenv("PVZ_INPUT_DEBUG") != nullptr;
+    if (dbg)
+        for (int i = 0; i < n; i++)
+            fprintf(stderr, "[%lld] event %d %d %d\n", (long long)platform_time_ms(), g_queue[i * 3], g_queue[i * 3 + 1],
+                    g_queue[i * 3 + 2]);
     memcpy(buf, g_queue, n * 3 * sizeof(int32_t));
     memmove(g_queue, g_queue + n * 3, (g_queue_len - n) * 3 * sizeof(int32_t));
     g_queue_len -= n;

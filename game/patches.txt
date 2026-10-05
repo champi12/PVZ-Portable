@@ -6,3 +6,6 @@
 # Game run()V 47 83
 # Game run()V 72 83
 # Game run()V 79 83
+# Logical screen width: 480 on the phone. 564x320 has the PSP's 16:9 aspect ratio and is
+# scaled uniformly to 480x272, so the game shows more of the lawn instead of being stretched.
+cc <init>()V 20 564
