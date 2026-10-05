@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+struct JObject;
+
 // Fills up to max (type, a, b) triples with MIDP input events; returns the count.
 int port_poll_events(int32_t* buf, int max);
 
@@ -28,3 +30,7 @@ bool game_wants_cursor();
 enum { PROF_LOGIC, PROF_RENDER, PROF_SCALE, PROF_PRESENT, PROF_BLIT, PROF_FILL, PROF_COUNT };
 extern int64_t g_prof_us[PROF_COUNT];
 int64_t port_time_us();
+
+// Optional development hook: called for every image blit (weak, may be null).
+extern void game_log_blit(JObject* g, JObject* src_pixels, int sx, int sy, int w, int h, int tr, int x, int y)
+    __attribute__((weak));

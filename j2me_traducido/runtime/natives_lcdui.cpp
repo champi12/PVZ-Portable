@@ -212,6 +212,7 @@ void M_javax_microedition_lcdui_Graphics__blit__AIIIIIIIII_V(JObject* g, JObject
     if (!target_of(g, t)) return;
     int64_t t0 = port_time_us();
     struct Acc { int64_t t0; ~Acc() { g_prof_us[PROF_BLIT] += port_time_us() - t0; } } acc{t0};
+    if (game_log_blit) game_log_blit(g, src, sx, sy, w, h, tr, x + t.tx, y + t.ty);
     port_blit(t.pix, t.w, t.h, t.cx0, t.cy0, t.cx1, t.cy1, jadata<uint32_t>(JNN(src)), srcw, sx, sy, w, h, tr,
               x + t.tx, y + t.ty, (src->gc_mark & JMARK_OPAQUE) != 0);
 }
