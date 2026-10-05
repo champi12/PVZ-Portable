@@ -75,6 +75,18 @@ make JAR=/ruta/al/juego.jar
 Copia `build/psp/EBOOT.PBP` a `ms0:/PSP/GAME/PVZ/EBOOT.PBP` en la Memory Stick y ejecútalo
 desde *Juego → Memory Stick*. Necesita un firmware que permita homebrew (CFW / LME / ARK).
 
+## Rendimiento
+
+En PSP el lienzo del juego se dibuja con la GPU (GE) como textura escalada con filtro
+bilineal; la CPU sólo ejecuta la lógica del juego y dibuja los sprites en el lienzo. Medido
+en PPSSPP (CPU a 333 MHz) durante una partida: ~10–15 % de CPU para el juego y ~8 % para la
+música. La lógica original va a ~6 fotogramas por segundo (cada 166 ms, como en el móvil);
+el cursor se sigue redibujando a 60 Hz entre fotogramas.
+
+`make -f Makefile.psp PROFILE=1 BUILD=build/psp-prof` genera un EBOOT de pruebas que
+imprime el uso de CPU cada 5 s y lee entradas guionizadas de `autoplay.txt` (mismo formato
+que abajo; `shot` guarda capturas `.raw` ARGB 480×272).
+
 ## Pruebas automáticas en PC
 
 El ejecutable de PC puede jugar sin ventana con un reloj virtual y entradas guionizadas, y
