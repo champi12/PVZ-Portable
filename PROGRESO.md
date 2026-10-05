@@ -213,3 +213,6 @@ dist/       carpeta lista para copiar a la PSP / PPSSPP
 - AUTOTEST: `-DAT_SHOT_EVERY=n` guarda capturas cada n fotogramas; `tools/ppsspp_test.sh`
   sustituye a `at.sh`. Probado en PPSSPP 1.18.1: niveles 1-1 y 2-4 → 2-5 completos a 60 fps.
 - Los datos (`data/`, `ref/`) no se suben a git (contenido de EA/PopCap).
+- **Música en la consola real**: el hilo de música abría `data/music/...` con ruta relativa,
+  pero en PSP los hilos nuevos no tienen directorio de trabajo (PPSSPP lo avisa: "no current
+  working directory"), así que la música no sonaba. `music_play` ahora pasa la ruta completa.

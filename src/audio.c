@@ -10,6 +10,8 @@
 #include <psputility.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "audio.h"
 
 /* ---------------- efectos ---------------- */
@@ -149,7 +151,7 @@ unsigned int sfx_mem_used(void) { return sfx_mem; }
 /* ---------------- musica (sceMp3) ---------------- */
 static unsigned char __attribute__((aligned(64))) mp3_buf[16 * 1024];
 static short __attribute__((aligned(64))) pcm_buf[16 * (1152 / 2)];
-static char mus_req_path[128];
+static char mus_req_path[256];
 static volatile int mus_req, mus_req_loop, mus_stop_req, mus_playing;
 static volatile int mus_vol = 256;
 static int mp3_ok;
@@ -217,7 +219,18 @@ static int music_thread(SceSize args, void *argp)
 
 void music_play(const char *path, int loop)
 {
-    strncpy(mus_req_path, path, sizeof(mus_req_path) - 1);
+    /* En PSP los hilos creados por el juego no tienen directorio de trabajo: el hilo de
+     * musica necesita la ruta completa (ms0:/PSP/GAME/PVZ/data/music/...). */
+    char full[256];
+    if (!strchr(path, ':')) {
+        char cwd[200];
+        if (getcwd(cwd, sizeof(cwd))) {
+            snprintf(full, sizeof(full), "%s/%s", cwd, path);
+            path = full;
+        }
+    }
+    while (mus_req) sceKernelDelayThread(1000);   /* que el hilo recoja la peticion anterior */
+    snprintf(mus_req_path, sizeof(mus_req_path), "%s", path);
     mus_req_loop = loop;
     mus_req = 1;
 }
