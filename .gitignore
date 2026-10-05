@@ -1,5 +1,20 @@
+# compilacion
+*.o
+*.elf
+*.prx
+PARAM.SFO
+EBOOT.PBP
+dist/
 build/
+j2me_traducido/build/
+__pycache__/
+*.pyc
+
+# Contenido del juego (EA / PopCap): no se sube al repositorio.
+# data/ = gfx.pak, anim.pak, sfx.pak, music/*.mp3 (generados desde el .jar y el PvZ de PC)
+# ref/  = .jar extraido, codigo decompilado, imagenes extraidas
+data/
+ref/
+ICON0.PNG
 *.jar
 saves/
-*.pyc
-__pycache__/
