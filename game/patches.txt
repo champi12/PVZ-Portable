@@ -1,0 +1,4 @@
+# Integer constant patches applied to the original bytecode during translation:
+#   class  method(descriptor)  bytecode-offset  new-value
+# Logical screen height: the phone build uses a 480x320 landscape canvas.
+# cc <init>()V 14 272   (tested: the lawn does not fit, see README)

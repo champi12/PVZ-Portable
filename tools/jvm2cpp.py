@@ -832,6 +832,12 @@ class MethodTranslator:
     def gen(self, ins, st):
         n = ins.name
         d = len(st)
+        key = (self.cf.name, self.m.name + self.m.desc, ins.pc)
+        if key in self.world.const_patches:
+            if self.stack_effect(ins, list(st)) != st + ['i']:
+                raise TranslateError('constant patch at %s is not an int push' % (key,))
+            self.world.const_patches_used.add(key)
+            return '%s = %d; /* patched */' % (self.sv(d, 'i'), self.world.const_patches[key])
         sv = self.sv
         T = {'i': 'i', 'l': 'j', 'f': 'f', 'd': 'd', 'a': 'a'}
         world = self.world
@@ -1142,6 +1148,7 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--main', required=True, help='MIDlet class name')
     ap.add_argument('--override', help='file listing methods implemented by hand (cls.name(desc))')
+    ap.add_argument('--patch', help='file of int constant patches: "cls method(desc) pc value"')
     ap.add_argument('inputs', nargs='+')
     a = ap.parse_args()
 
@@ -1155,6 +1162,15 @@ def main():
             line = line.split('#')[0].strip()
             if line:
                 overrides.add(line)
+
+    world.const_patches = {}
+    world.const_patches_used = set()
+    if a.patch:
+        for line in open(a.patch):
+            line = line.split('#')[0].strip()
+            if line:
+                c, m, pc, v = line.split()
+                world.const_patches[(c, m, int(pc))] = int(v)
 
     os.makedirs(a.out, exist_ok=True)
     world.compute_layouts()
@@ -1373,6 +1389,9 @@ def main():
     write_if_changed(os.path.join(a.out, 'natives.txt'), '\n'.join(natives) + '\n')
     file_list.append('meta.cpp')
     write_if_changed(os.path.join(a.out, 'sources.mk'), 'GEN_SOURCES := ' + ' '.join(file_list) + '\n')
+    for k in world.const_patches:
+        if k not in world.const_patches_used:
+            errors.append('constant patch not applied: %s %s %d' % k)
     if errors:
         print('Translation errors:', file=sys.stderr)
         for e in errors:

@@ -20,12 +20,13 @@ RUNTIME_SRC := runtime/jvm.cpp runtime/natives_lang.cpp runtime/natives_lcdui.cp
                runtime/port.cpp runtime/main.cpp runtime/midi.cpp game/pvz_port.cpp
 PLATFORM_SRC := platform/platform_sdl.cpp
 
-CXXFLAGS ?= -O2 -g
-CXXFLAGS += -std=gnu++17 -fwrapv -fno-strict-aliasing -Wno-invalid-offsetof -Iruntime -I$(GEN) \
+OPT ?= -O2 -g
+CXXFLAGS := $(OPT) -std=gnu++17 -fwrapv -fno-strict-aliasing -Wno-invalid-offsetof -Iruntime -I$(GEN) \
             $(shell sdl2-config --cflags)
 LDLIBS += $(shell sdl2-config --libs) -lm -lpthread
 
-all: $(BUILD)/pvz
+all: $(GEN)/.stamp build/resources.bin
+	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) $(BUILD)/pvz
 
 # 1. mini CLDC/MIDP class library
 $(LIBCLS)/.stamp: $(JAVA_SRC)
@@ -35,9 +36,9 @@ $(LIBCLS)/.stamp: $(JAVA_SRC)
 	touch $@
 
 # 2. bytecode -> C++
-$(GEN)/.stamp: $(LIBCLS)/.stamp $(JAR) tools/jvm2cpp.py tools/classfile.py game/overrides.txt
+$(GEN)/.stamp: $(LIBCLS)/.stamp $(JAR) tools/jvm2cpp.py tools/classfile.py game/overrides.txt game/patches.txt
 	mkdir -p $(GEN)
-	$(PYTHON) tools/jvm2cpp.py --out $(GEN) --main Game --override game/overrides.txt $(LIBCLS) $(JAR)
+	$(PYTHON) tools/jvm2cpp.py --out $(GEN) --main Game --override game/overrides.txt --patch game/patches.txt $(LIBCLS) $(JAR)
 	touch $@
 
 # 3. game data
@@ -50,11 +51,8 @@ build/resources.bin: $(JAR) tools/pack_resources.py
 GEN_OBJ = $(patsubst %.cpp,$(BUILD)/gen/%.o,$(GEN_SOURCES))
 OBJ = $(GEN_OBJ) $(patsubst %.cpp,$(BUILD)/%.o,$(RUNTIME_SRC) $(PLATFORM_SRC)) $(BUILD)/runtime/resources.o
 
-$(BUILD)/pvz: $(GEN)/.stamp
-	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) link
-
-link: $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $(BUILD)/pvz $(OBJ) $(LDLIBS)
+$(BUILD)/pvz: $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ) $(LDLIBS)
 
 $(BUILD)/gen/%.o: $(GEN)/%.cpp $(GEN)/.stamp runtime/jvm.h
 	@mkdir -p $(dir $@)
@@ -71,4 +69,4 @@ $(BUILD)/%.o: %.cpp $(GEN)/.stamp $(wildcard runtime/*.h)
 clean:
 	rm -rf build
 
-.PHONY: all link clean
+.PHONY: all clean

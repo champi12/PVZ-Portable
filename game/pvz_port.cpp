@@ -7,16 +7,32 @@
 #include "platform.h"
 #include "port.h"
 
-enum { GAME_W = 480, GAME_H = 320 };
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 typedef J_javax_microedition_lcdui_Graphics Gfx;
 typedef J_javax_microedition_lcdui_Image Img;
+
+enum { GAME_W = 480 };
+
+// Height of the game's landscape canvas (320 on the phone; patched to 272 for the PSP).
+static int game_h() {
+    Img* src = (Img*)S_cc__a_Ljavax_microedition_lcdui_Image_;
+    return src ? src->f_height_I : SCREEN_H;
+}
+
 
 static void present_frame(JObject* screen_graphics) {
     Img* src = (Img*)S_cc__a_Ljavax_microedition_lcdui_Image_;
     Img* dst = (Img*)((Gfx*)screen_graphics)->f_img_Ljavax_microedition_lcdui_Image_;
     const uint32_t* s = jadata<uint32_t>(src->f_pixels_AI);
     uint32_t* d = jadata<uint32_t>(dst->f_pixels_AI);
+    const int GAME_H = src->f_height_I;
+    if (GAME_H == SCREEN_H) {
+        memcpy(d, s, SCREEN_W * SCREEN_H * 4);
+        return;
+    }
     // Vertical resample 320 -> 272 with linear filtering.
     for (int y = 0; y < SCREEN_H; y++) {
         int fy = ((y * 2 + 1) * GAME_H * 128) / (SCREEN_H * 2) - 64;  // 1/128 px
@@ -35,9 +51,33 @@ static void present_frame(JObject* screen_graphics) {
     }
 }
 
+// ---- Loading screens --------------------------------------------------------------------
+//
+// ce.a(steps, progress, flag, minMillis) starts a loading sequence. The phone build shows a
+// loading screen for at least minMillis and runs one loading step per frame. The port drops
+// the artificial minimum duration everywhere, and for every load after the initial one
+// (starting a level, retrying, next level...) runs all steps at once inside a single frame,
+// so no loading screen is shown at all.
+static int g_load_count = 0;
+
+void M_ce__a__Ljava_lang_String_Ljava_lang_String_ZJ_V(JObject* steps, JObject* progress, int32_t flag,
+                                                       int64_t min_ms) {
+    (void)min_ms;
+    M_ce__a__Ljava_lang_String_Ljava_lang_String_ZJ_V__orig(steps, progress, flag, 0);
+    if (g_load_count++ > 0) S_ce__d_Z = 1;  // load everything in one go
+    if (getenv("PVZ_DEBUG")) fprintf(stderr, "[%lld] load #%d start\n", (long long)platform_time_ms(), g_load_count);
+}
+
+static bool instant_loading_active() { return S_ce__a_Z && S_ce__d_Z; }
+
 void M_cc__paint__Ljavax_microedition_lcdui_Graphics__V(JObject* self, JObject* g) {
     (void)self;
     if (!S_cc__d_Z) return;
+    // Keep showing the previous frame instead of a loading screen.
+    if (instant_loading_active()) {
+        if (getenv("PVZ_DEBUG")) fprintf(stderr, "[%lld] skip loading frame\n", (long long)platform_time_ms());
+        return;
+    }
     if (S_Game__a_Z) {
         M_t__a__Ljavax_microedition_lcdui_Graphics__V(S_cc__a_Ljavax_microedition_lcdui_Graphics_);
         present_frame(g);
@@ -48,6 +88,7 @@ void M_cc__paint__Ljavax_microedition_lcdui_Graphics__V(JObject* self, JObject* 
 }
 
 void game_screen_to_pointer(int sx, int sy, int* px, int* py) {
+    const int GAME_H = game_h();
     int gx = sx;
     int gy = (sy * GAME_H + SCREEN_H / 2) / SCREEN_H;
     // The phone build rotates touch coordinates: portrait (px, py) == landscape (py, 319 - px).
