@@ -145,7 +145,11 @@ typedef struct {
     unsigned show;          /* pistas extra visibles (solo animacion 0) */
 } ZombieDef;
 
-/* animacion 0: pistas 11-13 bandera, 16-17 flotador, 21-23 cono, 24-26 cubo, 27-29 puerta */
+/* animacion 0: pistas 11-13 bandera, 16-17 flotador, 21-23 cono, 24-26 cubo, 27-29 puerta.
+ * Rangos medidos en los archivos re del J2ME: 0 normal (0-7 reposo, 8-19 andar, 20-29 comer, 30-39 morir,
+ * 40-49 nadar, 50-55 hundirse), 1 pertiga (13-23 salto, 24-34 andar sin pertiga), 5 lector (26-33 pierde el
+ * periodico), 11 saltarin (39-41 con el palo), 12 minero (32-36 bajo tierra, 37-41 sale), 13 globo (4-7 vuela,
+ * 8-14 cae), 15 buzo (15-19 se sumerge, 20-21 bajo el agua, 22-24 sale) */
 static const ZombieDef zombie_defs[ZT_COUNT] = {
  /* anim                 vida casco escudo vel     flags                  andar   comer   morir   */
  { RE_ZOMBIE,            270, 0,    0,    0.064f, 0,                     8,19,  20,29,  30,39, 0 },              /* normal */
@@ -157,16 +161,16 @@ static const ZombieDef zombie_defs[ZT_COUNT] = {
  { RE_ZOMBIE_POLEVAULT,  500, 0,    0,    0.150f, ZF_JUMP,               4,12,  42,48,  35,41, 0 },              /* saltador */
  { RE_ZOMBIE_DANCER,     500, 0,    0,    0.070f, ZF_DANCER,            25,35,  20,24,  36,44, 0 },              /* bailon */
  { RE_ZOMBIE_JACKBOX,    500, 0,    0,    0.120f, ZF_JACK,              11,21,  37,47,  28,36, 0 },              /* cajita */
- { RE_ZOMBIE_NEWSPAPER,  270, 0,    150,  0.064f, ZF_PAPER,              5,13,  14,21,  22,31, 0 },              /* lector */
+ { RE_ZOMBIE_NEWSPAPER,  270, 0,    150,  0.064f, ZF_PAPER,              9,17,  18,25,  34,44, 0 },              /* lector */
  { RE_ZOMBIE_BACKUP,     270, 0,    0,    0.070f, 0,                    11,27,   5,10,  -1,-1, 0 },              /* extra */
  { RE_ZOMBIE_GARGANTUAR,3000, 0,    0,    0.050f, ZF_GARG,               6,17,  18,25,  33,48, 0 },              /* zombistein */
  { RE_ZOMBIE_LADDER,     500, 0,    0,    0.120f, ZF_LADDER,             7,17,  45,50,  24,32, 0 },              /* escalador */
  { RE_ZOMBIE_CATAPULT,   850, 0,    0,    0.080f, ZF_CATAPULT,           0,6,    7,14,  18,21, 0 },              /* zombipulta */
- { RE_ZOMBIE_15,         500, 0,    0,    0.120f, ZF_POGO,               6,14,  25,30,  31,39, 0 },              /* saltarin */
- { RE_ZOMBIE_11,         270, 100,  0,    0.150f, ZF_DIG,                8,18,  19,28,  29,38, 0 },              /* picado */
+ { RE_ZOMBIE_POGO,       500, 0,    0,    0.120f, ZF_POGO,               8,18,  19,28,  29,38, 0 },              /* saltarin */
+ { RE_ZOMBIE_DIGGER,     270, 100,  0,    0.150f, ZF_DIG,                5,13,  14,21,  22,31, 0 },              /* picado */
  { RE_ZOMBIE_BALLOON,    270, 0,    0,    0.064f, ZF_FLY,               15,20,  21,31,  32,38, 0 },              /* globo */
  { RE_ZOMBIE,            270, 0,    0,    0.064f, ZF_SWIM,               8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* playero */
- { RE_ZOMBIE,            270, 0,    0,    0.064f, ZF_SWIM,               8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* buzo (sin animacion propia) */
+ { RE_ZOMBIE_SNORKEL,    270, 0,    0,    0.064f, ZF_SWIM,               6,14,  25,30,  31,39, 0 },              /* buzo */
  { RE_ZOMBIE,            500, 0,    0,    0.120f, ZF_SWIM | ZF_JUMP,     8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* delfin (sin animacion propia) */
  { RE_BOSS,            40000, 0,    0,    0.0f,   0,                     0,8,    0,8,    0,8,   0 },              /* Dr. Zombi */
  { RE_ZOMBIE_IMP,        270, 0,    0,    0.100f, ZF_SMALL,              9,16,   0,8,   17,23, 0 },              /* zombidito */

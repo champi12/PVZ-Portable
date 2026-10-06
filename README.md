@@ -36,7 +36,7 @@ El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
 Los soles se recogen solos al pasar el cursor cerca.
 
 **¡Elige tus plantas!** (cuando tienes más plantas que huecos): cruceta para moverte, ✕ elige o
-quita, ◯ quita la última, START (o △) empieza la partida, SELECT vuelve al menú.
+quita, ◯ quita la última, △ empieza la partida, START abre la pausa (reanudar, reiniciar, menú, sonido).
 
 **Menú**: cruceta y ✕; ◯ va a "salir". En el almanaque, ◀ ▶ pasan de ficha y ▲ ▼ desplazan el texto.
 

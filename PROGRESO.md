@@ -241,3 +241,29 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
   col en vuelo es la 597. Las catapultas lanzan en el frame 6, cuando desaparece lo que sostienen.
 - Nombres oficiales del J2ME para las plantas (COMEPIEDRAS, SETA MIEDICA, PETASETA, ZAMPALGA...).
 - Arreglado `gfx_clip` (pasaba x2,y2 a `sceGuScissor`, que espera ancho y alto).
+
+### ✅ Sesión 8 — lista de errores del usuario, comparando con el J2ME
+- **Zombis con la animación equivocada**: los archivos `re` 5, 11, 12 y 15 son el lector, el saltarín,
+  el minero y el buzo (estaban cruzados: el lector usaba la del minero y por eso "explotaba"). Rangos
+  nuevos: lector rompe el periódico (26-29) y corre (30-33); pértiga salta con 13-23 (la animación lleva
+  ~58 px a la izquierda) y luego anda sin pértiga (24-34), también al terminar de comer; saltarín con el
+  palo (39-41); minero bajo tierra (32-36) y sale (37-41); globo vuela (4-7); buzo bajo el agua (20-21).
+- **Piscina**: los zombis andan con pies hasta entrar al agua (chapoteo) y nadan con la animación 40-49
+  de la animación 0, que ya oculta las piernas; se hunden con 50-55. El cortacésped de una fila de agua
+  cae a la piscina (el J2ME no tiene limpiapiscinas: solo carga 248 o 413).
+- **Piezas que caen**: brazo (350), cabeza (78), cono (33), cubo (316) y puerta (515) caen girando y
+  rebotan, tomados de la posición de su pista en el frame actual.
+- **Hipnosis**: los zombis muerden al hipnotizado que tienen delante; los mordiscos entre zombis ya no
+  suenan como golpes en el cono/cubo. Mordiscos sincronizados con la animación de comer.
+- **Plantas**: el guisante sale de la boca (cabeza a escala 1.12) en el frame 9, el del J2ME; frames de
+  disparo medidos para cada planta; la planta carnívora suena al cerrar la boca; la humoseta suelta 20
+  bolitas moradas (hoja 197) y una nube (89) en cada zombi, como `bk.i` del J2ME; la patatapum no
+  chamusca; espina del cactus = imagen 109 (la 426 es su boca); grano de maíz = 188 (la 30 es la cesta);
+  col = 544; mantequilla (281) dibujada en la cabeza; plantas asentadas en la tierra de la maceta;
+  4 columnas de macetas en el tejado (como el J2ME).
+- **Interfaz del J2ME** (`src/ui.c`, a escala 1:1 para que los mosaicos no dejen rayas): lápida morada
+  con calavera para la pausa (también al elegir plantas: START) y los avisos; almanaque con su fondo
+  naranja y marco, índice con los tres botones (plantas, zombis, ayuda), retratos 45x45 de cada zombi,
+  fichas con panel y desplazamiento que se detiene al final del texto; ficha de "¡ENCONTRASTE UNA
+  SEMILLA NUEVA!" y destellos en el sobre ganado; diálogo de Dave con bocadillo sobre el fondo del
+  nivel; pantalla de carga de la clase `by` (franja de césped fija y el cortacésped recorriéndola).

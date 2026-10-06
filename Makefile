@@ -1,6 +1,6 @@
 # Plants vs. Zombies PSP - Makefile (pspdev / PSPSDK)
 TARGET = pvz
-OBJS = src/main.o src/gfx.o src/audio.o src/input.o src/game.o src/reanim.o src/board.o
+OBJS = src/main.o src/gfx.o src/audio.o src/input.o src/game.o src/reanim.o src/board.o src/ui.o
 
 INCDIR = src
 CFLAGS = -O2 -G0 -Wall -ffast-math
