@@ -167,6 +167,7 @@ static int rnd(int a, int b) { return a + rand() % (b - a + 1); }
 static float frnd(float a, float b) { return a + (b - a) * (rand() % 10000) / 10000.0f; }
 static float cell_x(int c) { return G.x0 + c * G.cw; }
 static float cell_y(int r) { return G.y0 + r * G.rh; }
+#define CAM0 (G.roof ? 130.0f : 0.0f)
 /* tejado: las 5 primeras columnas van bajando 8.3 px cada una hacia la izquierda (medido en el J2ME) */
 static float slope_x(float x)
 {
@@ -692,6 +693,15 @@ static void update_zombies(void)
             Zombie *o = &Z[k];
             if (o != z && o->alive && o->hypno && o->state < ZS_DYING && o->row == z->row && o->x < z->x + 2 && z->x - o->x < 16) { foe = o; break; }
         }
+        if (!foe && z->type == ZT_POLE && !z->jumped && z->state == ZS_WALK) {
+            int pc = col_of(z->x - 40);
+            Plant *pp = top_plant(z->row, pc);
+            if (pp && pp->type != PL_SQUASH && !(pdef(pp->type)->flags & PF_NOEAT) && fabsf(z->x - 40 - (cell_x(pc) + G.cw / 2)) < G.cw * 0.45f) {
+                z->jx0 = z->x; z->timer = pp->type == PL_TALLNUT; z->state = ZS_JUMP;
+                z_anim(z, 13, 23, 0); z->anim.speed = 1.3f; z->jsnd = sfx_play(SFX_POLEVAULT) + 1;
+                continue;
+            }
+        }
         int c = foe ? -1 : z_front_col(z);
         if (foe) {
             if (z->state != ZS_EAT) { z->state = ZS_EAT; z->chew = -1; z_eat(z); }
@@ -1030,7 +1040,7 @@ static void update_plant(Plant *p, int r, int c)
     }
     case PK_CHOMPER:
         if (p->state == 0) {                          /* buscando */
-            Zombie *t = z_ahead(r, px - 6, G.cw * 1.6f, 0);   /* llega al zombi que come la planta de delante */
+            Zombie *t = z_ahead(r, px - 6, G.cw * 2.0f, 0);   /* llega al zombi que come la planta de delante */
             if (t && t->type != ZT_BOSS) { p->state = 1; p->aux = (int)(t - Z); p->shot_at = 10; reanim_play(&p->anim, RE_CHOMPER, 7, 12, 0); }
         } else if (p->state == 1 && p->shot_at >= 0 && p->anim.frame >= p->shot_at) {
             p->shot_at = -1; sfx_play(SFX_BIGCHOMP);       /* el mordisco suena cuando cierra la boca */
@@ -1390,7 +1400,7 @@ static void plant_at(int r, int c, int t)
 }
 
 /* PvZBV coloca el cursor al elegir semilla: misma idea */
-static void auto_place(int t)
+static __attribute__((unused)) void auto_place(int t)
 {
     Zombie *lead = NULL;
     for (int i = 0; i < MAXZ; i++) { Zombie *z = &Z[i]; if (z_hittable(z) && z->x < bush_x() && z->type != ZT_BOSS && (!lead || z->x < lead->x)) lead = z; }
@@ -1430,7 +1440,7 @@ static void setup_area(void)
     G.camy = G.y0 + G.rows * G.rh - SCREEN_H + 6;  /* que se vea entero el jardin */
     if (G.camy > G.y0 - HUD_H) G.camy = G.y0 - HUD_H;
     if (G.camy < 0) G.camy = 0;
-    G.camx = 0;   /* misma vista que el J2ME: casa a la izquierda, acera a la derecha */
+    G.camx = CAM0;   /* misma vista que el J2ME: casa a la izquierda (tejado: camara en 130, como el J2ME) */
     if (G.roof) G.camy = 18;   /* la pendiente baja la ultima fila de la columna 0 hasta y=286 */
 }
 
@@ -1519,7 +1529,7 @@ void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
     cur_r = (first_row() + last_row()) / 2; cur_c = 0;
     nwaves = level_waves[lv]; wave = 0; wave_timer = 1800; huge_timer = 0; msg_timer = 0;
     state = ST_INTRO; state_timer = 0; paused = 0; result = BR_PLAYING; reward_alive = 0; reward_type = -1;
-    intro_phase = IP_WAIT; intro_t = 0; hud_off = -60; G.camx = 0;
+    intro_phase = IP_WAIT; intro_t = 0; hud_off = -60; G.camx = CAM0;
     setup_preview();
     static const int pre[] = { SFX_PLANT, SFX_PLANT2, SFX_POINTS, SFX_SEEDLIFT, SFX_BUZZER, SFX_SHOVEL, SFX_PAUSE, SFX_READYSETPLANT,
         SFX_TAP, SFX_SPLAT, SFX_SPLAT2, SFX_SPLAT3, SFX_CHOMP, SFX_CHOMP2, SFX_CHOMPSOFT, SFX_GULP, SFX_THROW, SFX_THROW2,
@@ -1602,7 +1612,7 @@ static void update_intro(void)
         if (intro_t >= 90) { intro_phase = IP_OUT; intro_t = 0; }
         break;
     case IP_OUT:
-        G.camx = table_at(pan_out, 31, f);
+        G.camx = G.roof ? CAM0 : table_at(pan_out, 31, f);
         if (f >= 30) { intro_phase = choosing ? IP_CHOOSE : IP_HOLD; intro_t = 0; }
         break;
     case IP_HOLD:
@@ -1623,8 +1633,8 @@ static void update_intro(void)
         }
         break;
     case IP_BACK:
-        G.camx = table_at(pan_back, 26, f);
-        if (f >= 25) { intro_phase = IP_MOW; intro_t = 0; G.camx = 0; }
+        G.camx = G.roof ? CAM0 : table_at(pan_back, 26, f);
+        if (f >= 25) { intro_phase = IP_MOW; intro_t = 0; G.camx = CAM0; }
         break;
     case IP_MOW: {
         static const float hud_tab[] = { -60,-48,-38,-30,-23,-17,-12,-8,-5,-2,0,1,0 };
@@ -1692,7 +1702,7 @@ static void board_input(void)
         if (dn) { bank_sel = (bank_sel + 1) % nb; sfx_play(SFX_TAP); }
         if (rt) { mode = MODE_LAWN; sfx_play(SFX_TAP); }
         if (fire) {
-            if (bank_ready(bank_sel)) { held = bank_sel; mode = MODE_LAWN; sfx_play(SFX_SEEDLIFT); auto_place(seed_type(held)); }
+            if (bank_ready(bank_sel)) { held = bank_sel; mode = MODE_LAWN; sfx_play(SFX_SEEDLIFT); }   /* el cursor vuelve a su casilla */
             else sfx_play(SFX_BUZZER);
         }
         return;
@@ -1905,10 +1915,11 @@ static void draw_progress(void)
 
 static void draw_corners(float x, float y, float w, float h, int img)
 {
-    gfx_draw(img, x - 3, y - 3, WHITE, 0);
-    gfx_draw(img, x + w - 10, y - 3, WHITE, GFX_FLIPX);
-    gfx_draw(img, x - 3, y + h - 9, WHITE, GFX_FLIPY);
-    gfx_draw(img, x + w - 10, y + h - 9, WHITE, GFX_FLIPX | GFX_FLIPY);
+    u32 col = (frame / 15) & 1 ? 0x70FFFFFF : WHITE;          /* parpadea como el del PvZBV */
+    gfx_draw(img, x - 3, y - 3, col, 0);
+    gfx_draw(img, x + w - 10, y - 3, col, GFX_FLIPX);
+    gfx_draw(img, x - 3, y + h - 9, col, GFX_FLIPY);
+    gfx_draw(img, x + w - 10, y + h - 9, col, GFX_FLIPX | GFX_FLIPY);
 }
 /* desliza el cursor hacia el recuadro (x,y,w,h) y lo dibuja con las esquinas del PvZBV */
 static void cursor_to(float x, float y, float w, float h, int img)

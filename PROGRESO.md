@@ -293,3 +293,10 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
   recibe el primero) y la repetidora suelta el segundo desde la boca 0,22 s después.
 - Zampalga: hunde al zombi sin moverlo; carnívora: alcanza al que come la planta de delante; el brazo
   caído rebota y se desliza un poco hacia atrás antes de desaparecer.
+
+### ✅ Sesión 10 — tercera lista
+- Tejado: el J2ME juega el tejado con la cámara en x=130 (las macetas salen en pantalla desde x=38 y
+  los limpiatejados detrás de la caja de semillas); ahora igual.
+- Pértiga: empieza el salto 40 px antes de la planta para caer justo detrás de ella (saltaba dos).
+- Planta carnívora: alcanza al zombi que se come la nuez de delante (2 casillas).
+- Cursor: parpadea y se queda en su casilla al elegir un sobre.
