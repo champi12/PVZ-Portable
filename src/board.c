@@ -1430,7 +1430,7 @@ static void setup_area(void)
         lane[2] = lane[3] = LN_WATER;
         if (a == AR_FOG) { G.night = 1; G.sky_sun = 0; G.music = "data/music/fog_rigormormist.mp3"; } else G.music = "data/music/pool_waterygraves.mp3";
     } else {
-        G.bg = IMG_BG_ROOF; G.y0 = 70; G.rh = 36.6f; G.x0 = 168; G.cw = 29; G.roof = 1; G.music = "data/music/roof_grazetheroof.mp3";
+        G.bg = IMG_BG_ROOF; G.y0 = 44; G.rh = 37.6f; G.x0 = 168; G.cw = 29; G.roof = 1;   /* filas y columnas sobre las tejas del fondo 45 */ G.music = "data/music/roof_grazetheroof.mp3";
         for (int r = 0; r < 5; r++) lane[r] = LN_ROOF;
     }
     if (lv == 4) G.music = "data/music/minigame_loonboon.mp3";
@@ -1441,7 +1441,7 @@ static void setup_area(void)
     if (G.camy > G.y0 - HUD_H) G.camy = G.y0 - HUD_H;
     if (G.camy < 0) G.camy = 0;
     G.camx = CAM0;   /* misma vista que el J2ME: casa a la izquierda (tejado: camara en 130, como el J2ME) */
-    if (G.roof) G.camy = 18;   /* la pendiente baja la ultima fila de la columna 0 hasta y=286 */
+    if (G.roof) G.camy = 12;   /* la pendiente baja la ultima fila de la columna 0 hasta y=273 */
 }
 
 /* orden de plantas del J2ME (ids 0..30 de su tabla; asi aparecen en "elige tus plantas") */

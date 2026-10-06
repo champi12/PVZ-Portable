@@ -300,3 +300,5 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Pértiga: empieza el salto 40 px antes de la planta para caer justo detrás de ella (saltaba dos).
 - Planta carnívora: alcanza al zombi que se come la nuez de delante (2 casillas).
 - Cursor: parpadea y se queda en su casilla al elegir un sobre.
+- Tejado: filas alineadas con las tejas del fondo (y0=44, alto 37.6); antes iban media teja por encima y
+  las macetas parecían flotar. Los zombis siguen la fila y la pendiente.
