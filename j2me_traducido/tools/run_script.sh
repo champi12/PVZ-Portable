@@ -8,7 +8,7 @@ COLS=${3:-3}
 mkdir -p "$OUT"
 rm -f "$OUT"/*.png
 PVZ_HEADLESS=1 PVZ_SCRIPT="$SCRIPT" PVZ_SHOTDIR="$OUT" PVZ_SAVEDIR="${PVZ_SAVEDIR:-$OUT/saves}" \
-    timeout 300 ./build/pc/pvz 2>&1 | grep -v screenshot | sort | uniq -c | sort -rn | head -20
+    timeout 600 ./build/pc/pvz 2>&1 | grep -v screenshot | sort | uniq -c | sort -rn | head -20
 python3 - "$OUT" "$COLS" <<'PY'
 import sys, os
 from PIL import Image, ImageDraw
