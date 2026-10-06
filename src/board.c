@@ -31,6 +31,12 @@
 #define IMG_SUNBAR 509
 #define IMG_SHOVEL 474
 #define IMG_SHOVEL_SLOT 95
+#define IMG_SHOVEL_BTN 328    /* boton de la pala del J2ME (30x23) */
+#define IMG_CUR_OK 612        /* esquina del cursor del PvZBV (13x12) */
+#define IMG_CUR_BAD 613       /* esquina roja: ahi no se puede plantar */
+#define IMG_SEEDFRAME 614     /* marco del sobre (41x31) */
+#define IMG_SMALLPACK 620     /* sobres pequenos del PvZBV (38x28), en el orden PL_* */
+#define SLOT_Y(i) (2 + (i) * 33.0f)
 #define IMG_MOWER 248
 #define IMG_SHADOW 97
 #define IMG_POWIE 83
@@ -77,12 +83,12 @@ static const short psheet[PS_COUNT][2] = {
     {477,44}, {5,30}, {232,40}, {10,30}, {325,44}, {52,61}, {395,34}, {83,54}, {104,53}, {590,60} };
 
 /* ---------------- textos (traduccion oficial, tabla t-spa) ---------------- */
-#define TXT_READY "PREPARADOS..."
-#define TXT_SET "LISTOS..."
-#define TXT_PLANT "¡A PLANTAR!"
-#define TXT_HUGE "SE APROXIMA UNA GRAN HORDA DE ZOMBIS"
-#define TXT_FINAL "ÚLTIMA OLEADA"
-#define TXT_LOSE "¡TE HAN COMIDO LOS SESOS!"
+#define TXT_READY TXT[251]
+#define TXT_SET TXT[252]
+#define TXT_PLANT TXT[253]
+#define TXT_HUGE TXT[76]
+#define TXT_FINAL TXT[77]
+#define TXT_LOSE TXT[263]
 
 #define COLS 9
 #define RMAX 6
@@ -90,7 +96,7 @@ static const short psheet[PS_COUNT][2] = {
 #define KPC(px) ((px) * G.cw / 80.0f)     /* px del PC -> px de este fondo */
 
 /* ---------------- geometria por zona ---------------- */
-typedef struct { int bg, rows, night, sky_sun; float x0, y0, cw, rh, ws, camx, camy; const char *music; } Geo;
+typedef struct { int bg, rows, night, sky_sun, roof; float x0, y0, cw, rh, ws, camx, camy; const char *music; } Geo;
 static Geo G;
 static int lane[RMAX];          /* 0 tierra, 1 cesped, 2 agua, 3 tejado */
 enum { LN_DIRT, LN_GRASS, LN_WATER, LN_ROOF };
@@ -112,6 +118,7 @@ typedef struct {
     int hp, helm, maxhelm, shield, maxshield;
     int chill, freeze, butter, arm_lost, fade, chew, hypno, timer, jumped, under, balloon, ammo, swim, angry, summoned;
     int inwater;              /* nadando (en las filas de agua, ya dentro de la piscina) */
+    int kelped, jsnd;         /* agarrado por la zampalga; sonido del salto (+1) */
     float jx0;                /* x al empezar un salto */
     ReAnim anim;
 } Zombie;
@@ -144,6 +151,7 @@ static int wave, nwaves, wave_timer, huge_timer, wave_hp_trig, msg_timer, msg_ki
 static int conveyor, belt[12], belt_n, belt_timer; static float belt_x[12];
 static int reward_type, reward_alive; static float reward_x, reward_y;
 static float tick_acc;
+static float curx = -1, cury, curw, curh;    /* cursor que se desliza hacia su casilla (como el PvZBV) */
 enum { ST_INTRO, ST_PLAY, ST_WONWAIT, ST_LOST };
 /* intro del J2ME: espera, la camara va a la calle (zombis de la oleada), eleccion de plantas,
  * vuelve, entran los cortacesped y la barra de semillas, y "preparados, listos, a plantar" */
@@ -159,6 +167,15 @@ static int rnd(int a, int b) { return a + rand() % (b - a + 1); }
 static float frnd(float a, float b) { return a + (b - a) * (rand() % 10000) / 10000.0f; }
 static float cell_x(int c) { return G.x0 + c * G.cw; }
 static float cell_y(int r) { return G.y0 + r * G.rh; }
+/* tejado: las 5 primeras columnas van bajando 8.3 px cada una hacia la izquierda (medido en el J2ME) */
+static float slope_x(float x)
+{
+    if (!G.roof) return 0;
+    float k = 5.5f - (x - G.x0) / G.cw;
+    return (k < 0 ? 0 : k > 5 ? 5 : k) * 8.3f;
+}
+static float cy_x(int r, float x) { return cell_y(r) + slope_x(x); }
+static float cy_c(int r, int c) { return cell_y(r) + slope_x(G.x0 + (c + 0.5f) * G.cw); }
 static float sxw(float x) { return (x - G.camx) * G.ws; }
 static float syw(float y) { return (y - G.camy) * G.ws; }
 static float view_right(void) { return G.camx + SCREEN_W / G.ws; }
@@ -202,7 +219,7 @@ static void splat(int sheet, float x, float y) { part(sheet, x, y, 0, 0, 0, 24);
 /* pieza que se suelta del zombi (brazo, cabeza, cono, cubo, puerta): cae girando y rebota en el suelo */
 static void drop_part(int img, float x, float y, float floor, float vx)
 {
-    Part *p = part(0, x, y, vx, -1.1f, 0.06f, 160);
+    Part *p = part(0, x, y, vx * 0.4f, -1.1f, 0.06f, 170);
     if (!p) return;
     p->img = img; p->floor = floor; p->vr = frnd(-0.12f, 0.12f) + (vx < 0 ? -0.06f : 0.06f);
 }
@@ -214,7 +231,12 @@ static void update_parts(void)
         p->x += p->vx; p->y += p->vy; p->vy += p->g;
         if (p->img >= 0) {
             p->rot += p->vr;
-            if (p->y > p->floor) { p->y = p->floor; p->vy = -p->vy * 0.3f; p->vx *= 0.5f; p->vr *= 0.4f; if (fabsf(p->vy) < 0.3f) { p->vy = 0; p->g = 0; p->vr = 0; } }
+            if (p->y > p->floor) {               /* rebota una vez y luego se desliza un poco hacia atras */
+                p->y = p->floor;
+                if (p->vy > 0.9f) { p->vy = -p->vy * 0.3f; p->vr *= 0.4f; }
+                else { p->vy = 0; p->g = 0; p->vr = 0; if (p->loop == 0) { p->loop = 2; p->vx = 0.55f; } }
+            }
+            if (p->loop == 2) p->vx *= 0.95f;
         }
         if (++p->age >= p->ttl) p->alive = 0;
     }
@@ -380,7 +402,7 @@ static int z_track_pos(Zombie *z, int track, float *x, float *y, int *img)
     float hx, hy;
     if (zd(z)->re != RE_ZOMBIE || !reanim_track_info(&z->anim, track, &hx, &hy, img)) return 0;
     *x = z->x - ZAX + hx + img_w(*img) / 2.0f;
-    *y = cell_y(z->row) + G.rh - 2 + z->yoff - ZAY + hy + img_h(*img) / 2.0f;
+    *y = cy_x(z->row, z->x) + G.rh - 2 + z->yoff - ZAY + hy + img_h(*img) / 2.0f;
     return 1;
 }
 static void z_drop(Zombie *z, int track, int fallback_img)
@@ -419,6 +441,7 @@ static void boss_set(Zombie *z, int st);
 static void z_kill(Zombie *z, int charred)
 {
     if (z->state >= ZS_DYING) return;
+    if (z->jsnd) { sfx_stop(z->jsnd - 1); z->jsnd = 0; }          /* aplastado en pleno salto: sin el "hup" */
     if (z->type == ZT_BOSS) { z->state = ZS_DYING; z->fade = 500; boss_set(z, BS_DIE); sfx_play(SFX_BOSSEXPLOSION); return; }
     if (charred && zd(z)->re == RE_ZOMBIE && reanim_get(RE_ZOMBIE_CHARRED)) {
         z->state = ZS_CHARRED;
@@ -595,7 +618,7 @@ static void update_zombies(void)
             if (z->type == ZT_POLE) {                 /* la animacion 13-23 lleva al zombi ~58 px a la izquierda */
                 if (reanim_done(&z->anim)) {
                     z->x = z->jx0 - (z->timer ? 0 : 58);
-                    z->jumped = 1; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z);
+                    z->jumped = 1; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z); z->jsnd = 0;
                 }
             } else {                                  /* saltarin / delfin: brinco por encima de la planta */
                 float f = (++z->timer) / 60.0f;
@@ -678,9 +701,10 @@ static void update_zombies(void)
             /* saltador / delfin / saltarin: pasan por encima (la nuez cascara-rabias los para) */
             int can_jump = (z->type == ZT_POLE || z->type == ZT_POGO || z->type == ZT_DOLPHIN) && !z->jumped;
             if (z->type == ZT_DOLPHIN && !z->inwater) can_jump = 0;
+            if (p->type == PL_SQUASH) can_jump = 0;        /* la apisonaflor lo aplasta antes */
             if (can_jump) {
                 z->jx0 = z->x; z->timer = p->type == PL_TALLNUT; z->state = ZS_JUMP;
-                if (z->type == ZT_POLE) { z_anim(z, 13, 23, 0); z->anim.speed = 1.3f; sfx_play(SFX_POLEVAULT); }
+                if (z->type == ZT_POLE) { z_anim(z, 13, 23, 0); z->anim.speed = 1.3f; z->jsnd = sfx_play(SFX_POLEVAULT) + 1; }
                 else if (p->type == PL_TALLNUT) { z->state = ZS_WALK; z->jumped = 1; z_walk(z); sfx_play(SFX_BONK); continue; }
                 else { z->timer = 0; sfx_play(z->type == ZT_POGO ? SFX_POGO_ZOMBIE : SFX_DOLPHIN_APPEARS); }
                 continue;
@@ -770,10 +794,10 @@ static void plant_origin(Plant *p, int r, int c, float *ox, float *oy)
     static float zero[4];
     float *bb = p->anim.def ? p->anim.def->bbox : zero;
     *ox = cell_x(c) + G.cw / 2 - (bb[0] + bb[2]) / 2;
-    *oy = cell_y(r) + G.rh - 3 - bb[3];
+    *oy = cy_c(r, c) + G.rh - 3 - bb[3];
     if (P[r][c][0].alive && p == &P[r][c][1] && P[r][c][0].anim.def) {
         float *pb = P[r][c][0].anim.def->bbox; float h = pb[3] - pb[1];
-        *oy -= P[r][c][0].type == PL_LILYPAD ? h * 0.35f : h - 6;
+        *oy -= P[r][c][0].type == PL_LILYPAD ? h * 0.35f : h - 13;
     }
 }
 
@@ -828,6 +852,15 @@ static void update_plant(Plant *p, int r, int c)
     }
     case PK_SHOOTER: {
         if (p->timer > 0) p->timer--;
+        if (p->type == PL_REPEATER && p->aux > 0 && --p->aux == 0) {
+            float ox, oy, hx, hy; int img;
+            plant_origin(p, r, c, &ox, &oy);
+            if (reanim_track_info(&p->anim, 6, &hx, &hy, &img) && img >= 0) {
+                Proj *q = new_proj(PJ_PEA, r, ox + hx + img_w(img) * 1.12f - 8, oy + hy + img_h(img) * 1.12f * 0.40f);
+                if (q) q->x0 = px - 4;
+                sfx_play_vol(rand() & 1 ? SFX_THROW : SFX_THROW2, 200);
+            }
+        }
         float range = 2000;
         int air = p->type == PL_CACTUS;
         if (p->type == PL_PUFFSHROOM || p->type == PL_SEASHROOM) range = G.cw * 3.2f;
@@ -858,7 +891,7 @@ static void update_plant(Plant *p, int r, int c)
                 if (p->type == PL_PEASHOOTER || p->type == PL_SNOWPEA || p->type == PL_REPEATER) {
                     int head = p->type == PL_SNOWPEA ? 5 : p->type == PL_REPEATER ? 6 : 4;
                     if (reanim_track_info(&p->anim, head, &hx, &hy, &img) && img >= 0) {
-                        mx = ox + hx + img_w(img) * 1.12f - 3; my = oy + hy + img_h(img) * 1.12f * 0.40f;   /* boca (cabeza a escala 1.12) */
+                        mx = ox + hx + img_w(img) * 1.12f - 8; my = oy + hy + img_h(img) * 1.12f * 0.40f;   /* dentro de la boca (cabeza a escala 1.12) */
                     }
                 }
                 int kind = p->type == PL_SNOWPEA ? PJ_SNOW : p->type == PL_SEASHROOM ? PJ_SEA :
@@ -870,8 +903,9 @@ static void update_plant(Plant *p, int r, int c)
                     for (int k = -1; k <= 1; k++) if (row_ok(r + k)) new_proj(PJ_PEA, r + k, mx, my + k * G.rh);
                 } else {
                     Proj *q = new_proj(kind, r, mx, my);
+                    if (q) q->x0 = px - 4;               /* tramo desde la planta: un zombi pegado a ella tambien recibe */
                     if (q && (p->type == PL_PUFFSHROOM || p->type == PL_SEASHROOM)) q->maxx = px + G.cw * 3.4f;
-                    if (p->type == PL_REPEATER) { Proj *q2 = new_proj(PJ_PEA, r, mx - 14, my); (void)q2; }
+                    if (p->type == PL_REPEATER) p->aux = 22;   /* el segundo guisante sale de la boca un poco despues */
                 }
                 if (kind == PJ_PUFF || kind == PJ_SEA) sfx_play_vol(SFX_PUFF, 200); else sfx_play_vol(rand() & 1 ? SFX_THROW : SFX_THROW2, 200);
                 p->shot_at = -1;
@@ -908,7 +942,7 @@ static void update_plant(Plant *p, int r, int c)
                 int kind = p->type == PL_CABBAGEPULT ? PJ_CABBAGE : p->type == PL_MELONPULT ? PJ_MELON : (p->aux ? PJ_BUTTER : PJ_KERNEL);
                 float ox, oy; plant_origin(p, r, c, &ox, &oy);
                 Proj *q = new_proj(kind, r, px - 4, oy + 2);
-                if (q) { q->target = (int)(t - Z); q->tx = t->x; q->ty = cell_y(r) + G.rh * 0.35f; q->dur = 100; }
+                if (q) { q->target = (int)(t - Z); q->tx = t->x; q->ty = cy_x(r, t->x) + G.rh * 0.35f; q->dur = 100; }
                 sfx_play(p->type == PL_KERNELPULT ? SFX_KERNELPULT : SFX_THROW);
             }
         }
@@ -996,7 +1030,7 @@ static void update_plant(Plant *p, int r, int c)
     }
     case PK_CHOMPER:
         if (p->state == 0) {                          /* buscando */
-            Zombie *t = z_ahead(r, px - 6, G.cw * 1.15f, 0);
+            Zombie *t = z_ahead(r, px - 6, G.cw * 1.6f, 0);   /* llega al zombi que come la planta de delante */
             if (t && t->type != ZT_BOSS) { p->state = 1; p->aux = (int)(t - Z); p->shot_at = 10; reanim_play(&p->anim, RE_CHOMPER, 7, 12, 0); }
         } else if (p->state == 1 && p->shot_at >= 0 && p->anim.frame >= p->shot_at) {
             p->shot_at = -1; sfx_play(SFX_BIGCHOMP);       /* el mordisco suena cuando cierra la boca */
@@ -1038,16 +1072,17 @@ static void update_plant(Plant *p, int r, int c)
             for (int i = 0; i < MAXZ; i++) {
                 Zombie *z = &Z[i];
                 if (z_hittable(z) && z->row == r && !z->balloon && z->type != ZT_BOSS && fabsf(z->x - px) < G.cw * 0.75f) {
-                    p->state = 1; p->aux = i; p->timer = 0; z->freeze = 10000; z->x = px + 4;
+                    p->state = 1; p->aux = i; p->timer = 0; z->freeze = 10000; z->kelped = 1;
                     reanim_play(&p->anim, RE_TANGLEKELP, 5, 16, 0); sfx_play(SFX_ZOMBIE_ENTERING_WATER);
+                    part(PS_SPLASH, z->x, cell_y(r) + G.rh * 0.75f, 0, 0, 0, 40);
                     break;
                 }
             }
         } else {
             Zombie *z = &Z[p->aux];
             p->timer++;
-            if (z->alive) { z->yoff = p->timer * 0.5f; z->freeze = 10000; }
-            if (p->timer > 90) { if (z->alive) z->alive = 0; p->alive = 0; sfx_play(SFX_ZOMBIESPLASH); }
+            if (z->alive) { z->yoff = p->timer > 30 ? (p->timer - 30) * 0.9f : 0; z->freeze = 10000; }   /* lo agarra y lo hunde sin moverlo */
+            if (p->timer > 90) { if (z->alive) { z->alive = 0; part(PS_SPLASH, z->x, cell_y(r) + G.rh * 0.75f, 0, 0, 0, 40); } p->alive = 0; sfx_play(SFX_ZOMBIESPLASH); }
         }
         break;
     case PK_SPIKE:
@@ -1136,6 +1171,7 @@ static void update_projectiles(void)
             continue;
         }
         q->x += q->vx; q->y += q->vy;
+        int first = q->t == 0; q->t = 1;
         if (q->kind == PJ_STAR) {
             q->row = (int)((q->y - G.y0) / G.rh);
             if (q->x < G.x0 - 20 || q->x > view_right() || q->y < G.camy || q->y > G.y0 + G.rows * G.rh) { q->alive = 0; continue; }
@@ -1154,7 +1190,8 @@ static void update_projectiles(void)
             if (!z_hittable(z) || (z->row != q->row && z->type != ZT_BOSS)) continue;
             if (z->balloon && q->kind != PJ_SPIKE && q->kind != PJ_STAR) continue;
             if (z_submerged(z)) continue;
-            if (z->type == ZT_BOSS ? q->x >= cell_x(7) : (q->x >= z->x - 8 && q->x <= z->x + 10)) {
+            float back = first && q->x0 < q->x ? q->x0 : q->x - q->vx;   /* tramo recorrido este tick */
+            if (z->type == ZT_BOSS ? q->x >= cell_x(7) : (q->x >= z->x - 8 && back <= z->x + 10)) {
                 if (z->balloon && q->kind == PJ_SPIKE) { z->balloon = 0; z->speed = 0.064f; sfx_play(SFX_BALLOON_POP); z_anim(z, zd(z)->walk_s, zd(z)->walk_e, 1); }
                 else {
                     z_damage(z, q->dmg, 1, q->kind == PJ_SNOW);
@@ -1279,11 +1316,11 @@ static void update_belt(void)
             else if (lv == 39) { s = set39; n = 8; } else { s = set49; n = 8; }
             t = s[rnd(0, n - 1)];
         }
-        belt[belt_n] = t; belt_x[belt_n] = SCREEN_W; belt_n++;
+        belt[belt_n] = t; belt_x[belt_n] = SCREEN_H; belt_n++;   /* entran por abajo en la columna de la izquierda */
     }
     for (int i = 0; i < belt_n; i++) {
-        float target = 4 + i * 49;
-        if (belt_x[i] > target) { belt_x[i] -= 1.0f; if (belt_x[i] < target) belt_x[i] = target; }
+        float target = SLOT_Y(i);
+        if (belt_x[i] > target) { belt_x[i] -= 0.8f; if (belt_x[i] < target) belt_x[i] = target; }
     }
 }
 static void belt_remove(int i)
@@ -1297,7 +1334,7 @@ static void belt_remove(int i)
 static int bank_count(void) { return conveyor ? belt_n : nseeds; }
 static int bank_ready(int i)
 {
-    if (conveyor) return i < belt_n && belt_x[i] <= 4 + i * 49 + 0.5f;
+    if (conveyor) return i < belt_n && belt_x[i] <= SLOT_Y(i) + 0.5f;
     return refresh[i] == 0 && sun >= plant_defs[seeds[i]].cost;
 }
 
@@ -1383,7 +1420,7 @@ static void setup_area(void)
         lane[2] = lane[3] = LN_WATER;
         if (a == AR_FOG) { G.night = 1; G.sky_sun = 0; G.music = "data/music/fog_rigormormist.mp3"; } else G.music = "data/music/pool_waterygraves.mp3";
     } else {
-        G.bg = IMG_BG_ROOF; G.y0 = 70; G.rh = 36.0f; G.x0 = 175; G.music = "data/music/roof_grazetheroof.mp3";
+        G.bg = IMG_BG_ROOF; G.y0 = 70; G.rh = 36.6f; G.x0 = 168; G.cw = 29; G.roof = 1; G.music = "data/music/roof_grazetheroof.mp3";
         for (int r = 0; r < 5; r++) lane[r] = LN_ROOF;
     }
     if (lv == 4) G.music = "data/music/minigame_loonboon.mp3";
@@ -1394,6 +1431,7 @@ static void setup_area(void)
     if (G.camy > G.y0 - HUD_H) G.camy = G.y0 - HUD_H;
     if (G.camy < 0) G.camy = 0;
     G.camx = 0;   /* misma vista que el J2ME: casa a la izquierda, acera a la derecha */
+    if (G.roof) G.camy = 18;   /* la pendiente baja la ultima fila de la columna 0 hasta y=286 */
 }
 
 /* orden de plantas del J2ME (ids 0..30 de su tabla; asi aparecen en "elige tus plantas") */
@@ -1513,25 +1551,44 @@ static float mower_entry_x(int r, float f)
 }
 static int ch_is_chosen(int t) { for (int i = 0; i < nseeds; i++) if (seeds[i] == t) return 1; return 0; }
 static int ch_need(void) { return ch_n < slots ? ch_n : slots; }
+#define CH_COLS 4
+#define CH_ROWS 5
+static int ch_side, ch_sidx;      /* cursor en la columna de las elegidas (para quitarlas) */
 static void chooser_input(void)
 {
-    int rows = (ch_n + 2) / 3;
-    if (btn_repeat(PSP_CTRL_RIGHT) && ch_cur + 1 < ch_n && ch_cur % 3 < 2) { ch_cur++; sfx_play(SFX_TAP); }
-    if (btn_repeat(PSP_CTRL_LEFT) && ch_cur % 3 > 0) { ch_cur--; sfx_play(SFX_TAP); }
-    if (btn_repeat(PSP_CTRL_DOWN) && ch_cur / 3 + 1 < rows) { ch_cur += 3; if (ch_cur >= ch_n) ch_cur = ch_n - 1; sfx_play(SFX_TAP); }
-    if (btn_repeat(PSP_CTRL_UP) && ch_cur >= 3) { ch_cur -= 3; sfx_play(SFX_TAP); }
-    if (ch_cur / 3 < ch_scroll) ch_scroll = ch_cur / 3;
-    if (ch_cur / 3 > ch_scroll + 4) ch_scroll = ch_cur / 3 - 4;
-    if (btn_pressed(PSP_CTRL_CROSS)) {
-        int t = ch_list[ch_cur], found = -1;
-        for (int i = 0; i < nseeds; i++) if (seeds[i] == t) found = i;
-        if (found >= 0) { for (int i = found; i < nseeds - 1; i++) seeds[i] = seeds[i + 1]; nseeds--; sfx_play(SFX_TAP); }
-        else if (nseeds < slots) { seeds[nseeds++] = t; sfx_play(SFX_SEEDLIFT); }
-        else sfx_play(SFX_BUZZER);
+    int rows = (ch_n + CH_COLS - 1) / CH_COLS;
+    if (ch_side) {                                 /* columna de la izquierda: arriba/abajo, X quita */
+        if (nseeds == 0) { ch_side = 0; return; }
+        if (ch_sidx >= nseeds) ch_sidx = nseeds - 1;
+        if (btn_repeat(PSP_CTRL_UP) && ch_sidx > 0) { ch_sidx--; sfx_play(SFX_TAP); }
+        if (btn_repeat(PSP_CTRL_DOWN) && ch_sidx + 1 < nseeds) { ch_sidx++; sfx_play(SFX_TAP); }
+        if (btn_repeat(PSP_CTRL_RIGHT)) { ch_side = 0; sfx_play(SFX_TAP); }
+        if (btn_pressed(PSP_CTRL_CROSS)) {
+            for (int i = ch_sidx; i < nseeds - 1; i++) seeds[i] = seeds[i + 1];
+            nseeds--; sfx_play(SFX_TAP);
+            if (ch_sidx >= nseeds) ch_sidx = nseeds - 1;
+            if (nseeds == 0) ch_side = 0;
+        }
+    } else {
+        if (btn_repeat(PSP_CTRL_RIGHT) && ch_cur + 1 < ch_n && ch_cur % CH_COLS < CH_COLS - 1) { ch_cur++; sfx_play(SFX_TAP); }
+        if (btn_repeat(PSP_CTRL_LEFT)) {
+            if (ch_cur % CH_COLS > 0) { ch_cur--; sfx_play(SFX_TAP); }
+            else if (nseeds > 0) { ch_side = 1; ch_sidx = nseeds - 1; sfx_play(SFX_TAP); }
+        }
+        if (btn_repeat(PSP_CTRL_DOWN) && ch_cur / CH_COLS + 1 < rows) { ch_cur += CH_COLS; if (ch_cur >= ch_n) ch_cur = ch_n - 1; sfx_play(SFX_TAP); }
+        if (btn_repeat(PSP_CTRL_UP) && ch_cur >= CH_COLS) { ch_cur -= CH_COLS; sfx_play(SFX_TAP); }
+        if (btn_pressed(PSP_CTRL_CROSS)) {
+            int t = ch_list[ch_cur], found = -1;
+            for (int i = 0; i < nseeds; i++) if (seeds[i] == t) found = i;
+            if (found >= 0) { for (int i = found; i < nseeds - 1; i++) seeds[i] = seeds[i + 1]; nseeds--; sfx_play(SFX_TAP); }
+            else if (nseeds < slots) { seeds[nseeds++] = t; sfx_play(SFX_SEEDLIFT); }
+            else sfx_play(SFX_BUZZER);
+        }
     }
-    if (btn_pressed(PSP_CTRL_CIRCLE) && nseeds > 0) { nseeds--; sfx_play(SFX_TAP); }
+    if (ch_cur / CH_COLS < ch_scroll) ch_scroll = ch_cur / CH_COLS;
+    if (ch_cur / CH_COLS > ch_scroll + CH_ROWS - 1) ch_scroll = ch_cur / CH_COLS - (CH_ROWS - 1);
     if (btn_pressed(PSP_CTRL_TRIANGLE)) {
-        if (nseeds >= ch_need()) { sfx_play(SFX_BUTTONCLICK); intro_phase = IP_CHOOSE_OUT; intro_t = 0; }
+        if (nseeds >= ch_need()) { sfx_play(SFX_BUTTONCLICK); intro_phase = IP_CHOOSE_OUT; intro_t = 0; ch_side = 0; }
         else sfx_play(SFX_BUZZER);
     }
 }
@@ -1629,20 +1686,20 @@ static void board_input(void)
     if (btn_pressed(PSP_CTRL_TRIANGLE) && shovel_ok) { mode = mode == MODE_SHOVEL ? MODE_LAWN : MODE_SHOVEL; held = -1; sfx_play(SFX_SHOVEL); }
     if (btn_pressed(PSP_CTRL_CIRCLE) && (mode != MODE_LAWN || held >= 0)) { mode = MODE_LAWN; held = -1; sfx_play(SFX_TAP); }
 
-    if (mode == MODE_BANK) {
+    if (mode == MODE_BANK) {                  /* caja de semillas en columna (PvZBV): arriba/abajo, derecha vuelve */
         if (nb == 0) { mode = MODE_LAWN; return; }
-        if (lf) { bank_sel = (bank_sel + nb - 1) % nb; sfx_play(SFX_TAP); }
-        if (rt) { bank_sel = (bank_sel + 1) % nb; sfx_play(SFX_TAP); }
-        if (up) { mode = MODE_LAWN; cur_r = last_row(); }
-        if (dn) { mode = MODE_LAWN; cur_r = first_row(); }
+        if (up) { bank_sel = (bank_sel + nb - 1) % nb; sfx_play(SFX_TAP); }
+        if (dn) { bank_sel = (bank_sel + 1) % nb; sfx_play(SFX_TAP); }
+        if (rt) { mode = MODE_LAWN; sfx_play(SFX_TAP); }
         if (fire) {
             if (bank_ready(bank_sel)) { held = bank_sel; mode = MODE_LAWN; sfx_play(SFX_SEEDLIFT); auto_place(seed_type(held)); }
             else sfx_play(SFX_BUZZER);
         }
         return;
     }
-    if (up) { if (cur_r <= first_row()) { if (mode == MODE_LAWN && state == ST_PLAY) mode = MODE_BANK; else cur_r = last_row(); } else { do cur_r--; while (!row_ok(cur_r)); } }
-    if (dn) { if (cur_r >= last_row()) { if (mode == MODE_LAWN && state == ST_PLAY) mode = MODE_BANK; else cur_r = first_row(); } else { do cur_r++; while (!row_ok(cur_r)); } }
+    if (up) { if (cur_r <= first_row()) cur_r = last_row(); else { do cur_r--; while (!row_ok(cur_r)); } }
+    if (dn) { if (cur_r >= last_row()) cur_r = first_row(); else { do cur_r++; while (!row_ok(cur_r)); } }
+    if (lf && cur_c == 0 && mode == MODE_LAWN && state == ST_PLAY && nb > 0) { mode = MODE_BANK; sfx_play(SFX_TAP); return; }
     if (lf && cur_c > 0) cur_c--;
     if (rt && cur_c < COLS - 1) cur_c++;
     if (!fire || state != ST_PLAY) return;
@@ -1697,6 +1754,11 @@ int board_update(void)
     }
     if (state == ST_PLAY && state_timer == 420) plant_at(3, 6, PL_CHERRYBOMB);
 #endif
+#if defined(AUTOTEST) && defined(AT_HUD)
+    if (state == ST_PLAY && state_timer == 60) { sun = 500; held = 1; cur_r = 2; cur_c = 3; }
+    if (state == ST_PLAY && state_timer == 200) { held = -1; mode = MODE_BANK; bank_sel = 2; }
+    if (state == ST_PLAY && state_timer == 320) { mode = MODE_LAWN; held = 0; cur_r = 1; cur_c = 2; plant_at(1, 2, PL_PEASHOOTER); }
+#endif
 #if defined(AUTOTEST) && defined(AT_PAUSE)
     if (state == ST_PLAY && state_timer == 30) { paused = 1; pause_sel = 1; }
     if (state == ST_PLAY && state_timer == 31 && frame % 200 == 0) pause_confirm = 1;
@@ -1745,7 +1807,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -1802,7 +1864,12 @@ static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
     if (!a->def) return;
     float *bb = a->def->bbox;
     float ox, oy;
-    if (a->def == reanim_get(RE_ZOMBIE)) { ox = cx - ZAX; oy = bottom - ZAY; }
+    /* pies de cada animacion de zombi (medidos en sus frames de andar): la pertiga los tiene 20 px a la
+     * derecha del centro de su caja, por eso parecia que comia desde lejos */
+    static const float zfeet[16] = { 0, 70.6f, 26.1f, 23.4f, 52.4f, 53.3f, 35.2f, 24.9f, 25.4f, 34.7f, 30.2f, 29.0f, 30.4f, 34.6f, -1, 32.6f };
+    int id = reanim_id(a->def);
+    if (id == RE_ZOMBIE) { ox = cx - ZAX; oy = bottom - ZAY; }
+    else if (id > 0 && id < 16 && zfeet[id] > 0) { ox = cx - zfeet[id]; oy = bottom - bb[3]; }
     else { ox = cx - (bb[0] + bb[2]) / 2; oy = bottom - bb[3]; }
     if (flip) reanim_draw_flip(a, sxw(2 * cx - ox), syw(oy), G.ws, 1, col);   /* mirando a la derecha */
     else reanim_draw(a, sxw(ox), syw(oy), G.ws, col);
@@ -1815,7 +1882,7 @@ static float pot_lift(int r, int c)
     if (!b->alive || !b->anim.def) return 0;
     float *bb = b->anim.def->bbox;
     float h = bb[3] - bb[1];
-    return b->type == PL_LILYPAD ? -h * 0.35f : -(h - 6);   /* la planta asienta en la tierra de la maceta */
+    return b->type == PL_LILYPAD ? -h * 0.35f : -(h - 13);  /* la planta asienta en la tierra de la maceta (fila 13 de la imagen 101) */
 }
 
 static void draw_progress(void)
@@ -1832,37 +1899,48 @@ static void draw_progress(void)
         gfx_draw(IMG_PFLAG, fx - 2, by - 12 + (w < wave ? -3 : 0), WHITE, 0);
     }
     gfx_draw(IMG_ZHEAD, bx + bw * (1 - prog) - 8, by - 6, WHITE, 0);
-    snprintf(buf, sizeof(buf), "NIVEL %d-%d", lv / 10 + 1, lv % 10 + 1);
+    snprintf(buf, sizeof(buf), "%s %d-%d", TXT[74], lv / 10 + 1, lv % 10 + 1);
     text_draw(FONT_SMALL, bx - 4 - text_width(FONT_SMALL, buf), SCREEN_H - 20, buf, 0xFFFFFFFF);
 }
 
+static void draw_corners(float x, float y, float w, float h, int img)
+{
+    gfx_draw(img, x - 3, y - 3, WHITE, 0);
+    gfx_draw(img, x + w - 10, y - 3, WHITE, GFX_FLIPX);
+    gfx_draw(img, x - 3, y + h - 9, WHITE, GFX_FLIPY);
+    gfx_draw(img, x + w - 10, y + h - 9, WHITE, GFX_FLIPX | GFX_FLIPY);
+}
+/* desliza el cursor hacia el recuadro (x,y,w,h) y lo dibuja con las esquinas del PvZBV */
+static void cursor_to(float x, float y, float w, float h, int img)
+{
+    if (curx < 0) { curx = x; cury = y; curw = w; curh = h; }
+    curx += (x - curx) * 0.35f; cury += (y - cury) * 0.35f;
+    curw += (w - curw) * 0.35f; curh += (h - curh) * 0.35f;
+    draw_corners(curx, cury, curw, curh, img);
+}
+
+/* caja de semillas del J2ME/PvZBV: columna a la izquierda con el marco 41x31 y los sobres 38x28 */
 static void draw_bank(void)
 {
     char buf[32];
     if (state == ST_INTRO && intro_phase < IP_MOW) return;
     float yo = hud_off;
     if (!conveyor) {
-        gfx_draw(IMG_SUNBAR, 2, 4 + yo, WHITE, 0);
+        gfx_draw(IMG_SUNBAR, 46, 2 + yo, WHITE, 0);
         snprintf(buf, sizeof(buf), "%d", sun);
-        text_draw_centered(FONT_SMALL, 45, 3 + yo, buf, 0xFF000000);
+        text_draw_centered(FONT_SMALL, 89, 1 + yo, buf, 0xFF000000);
     }
     int nb = bank_count();
-    float x0 = conveyor ? 4 : 70;
-    if (conveyor) gfx_rect(0, 0 + yo, SCREEN_W, 38, 0x90202020);
     for (int i = 0; i < nb; i++) {
         int t = seed_type(i);
-        float x = conveyor ? belt_x[i] : x0 + i * 49, y = 2 + yo;
-        if (i == held) y += 4;
-        int img = t == PL_BOWLNUT ? plant_defs[PL_WALLNUT].packet : plant_defs[t].packet;
-        gfx_draw(img, x, y, bank_ready(i) ? WHITE : 0xFF808080, 0);
-        if (!conveyor && refresh[i] > 0) gfx_rect(x, y, 47, 33 * (float)refresh[i] / plant_defs[t].refresh, 0x80000000);
-        if ((mode == MODE_BANK && i == bank_sel) || i == held) {
-            u32 c = (frame / 8) & 1 ? 0xFF00FFFF : 0xFF00C0FF;
-            gfx_rect(x - 1, y - 1, 49, 2, c); gfx_rect(x - 1, y + 32, 49, 2, c);
-            gfx_rect(x - 1, y - 1, 2, 35, c); gfx_rect(x + 46, y - 1, 2, 35, c);
-        }
+        float x = 2 + (i == held ? 5 : 0), y = (conveyor ? belt_x[i] : SLOT_Y(i)) + yo;
+        int pk = IMG_SMALLPACK + (t == PL_BOWLNUT ? PL_WALLNUT : t);
+        int ok = bank_ready(i);
+        gfx_draw(IMG_SEEDFRAME, x, y, WHITE, 0);
+        gfx_draw(pk, x + 2, y + 2, ok ? WHITE : 0xFF707070, 0);
+        if (!conveyor && refresh[i] > 0) gfx_rect(x + 2, y + 2, 38, 28 * (float)refresh[i] / plant_defs[t].refresh, 0x90000000);
     }
-    if (shovel_ok && !conveyor) gfx_draw(IMG_SHOVEL, x0 + nseeds * 49 + 4, 0 + yo, mode == MODE_SHOVEL ? 0xFF80FFFF : WHITE, 0);
+    if (shovel_ok && !conveyor) gfx_draw(IMG_SHOVEL_BTN, 114, 0 + yo, mode == MODE_SHOVEL ? 0xFF80FFFF : WHITE, 0);
     if (state != ST_INTRO) draw_progress();
 }
 
@@ -1885,7 +1963,7 @@ static void draw_chooser(void)
     if (intro_phase == IP_CHOOSE) slide = intro_t / (2 * JF) > 1 ? 1 : intro_t / (2 * JF);
     else if (intro_phase == IP_CHOOSE_OUT) slide = 1 - intro_t / (3 * JF);
     if (slide <= 0) return;
-    float px = 54 - (1 - slide) * 240, lx = -5 - (1 - slide) * 60;
+    float px = 54 - (1 - slide) * 300, lx = -5 - (1 - slide) * 60;
     int H = SCREEN_H;
     /* columna de semillas elegidas (430 arriba y abajo, 481 en tiras) */
     for (int y = 9; y < H - 9; y += 5) gfx_draw(IMG_CH_COLTILE, lx, y, WHITE, 0);
@@ -1896,57 +1974,60 @@ static void draw_chooser(void)
         float y = 6 + i * sp;
         if (i < nseeds) gfx_draw(plant_defs[seeds[i]].packet, lx + 5, y, WHITE, 0);
         else gfx_rect(lx + 6, y + 1, 45, 31, 0x50000000);
+        if (ch_side && i == ch_sidx && intro_phase == IP_CHOOSE) draw_corners(lx + 5, y, 47, 33, IMG_CUR_OK);
     }
     u32 okc = nseeds >= ch_need() ? ((frame / 10) & 1 ? WHITE : 0xFFB0FFFF) : 0xFF707070;
     gfx_draw(IMG_OK, lx + 10, H - 24, okc, 0);
     /* panel: esquinas 386, borde 214, laterales 157, abajo 203, fondo 375 */
+    const int PW = 16 + CH_COLS * 54, PIW = CH_COLS * 54;
     float top = 12, bot = H - 22;
-    gfx_clip((int)px + 16, (int)top + 30, 145, (int)(bot - top - 30));
-    for (float ty = top + 30; ty < bot; ty += 42) for (float tx = px + 16; tx < px + 161; tx += 42) gfx_draw(IMG_CH_BG, tx, ty, WHITE, 0);
+    gfx_clip((int)px + 16, (int)top + 30, PIW, (int)(bot - top - 30));
+    for (float ty = top + 30; ty < bot; ty += 42) for (float tx = px + 16; tx < px + PW; tx += 42) gfx_draw(IMG_CH_BG, tx, ty, WHITE, 0);
     gfx_noclip();
-    for (float x = px + 16; x < px + 161; x += 8) gfx_draw(IMG_CH_TOP, x, top, WHITE, 0);
+    for (float x = px + 16; x < px + PW; x += 8) gfx_draw(IMG_CH_TOP, x, top, WHITE, 0);
     gfx_draw(IMG_CH_CORNER, px, top, WHITE, 0);
-    gfx_draw(IMG_CH_CORNER, px + 161, top, WHITE, GFX_FLIPX);
-    for (float y = top + 36; y < bot; y += 8) { gfx_draw(IMG_CH_SIDE, px, y, WHITE, 0); gfx_draw(IMG_CH_SIDE, px + 161, y, WHITE, GFX_FLIPX); }
-    gfx_rect(px + 16, bot, 145, 16, 0xFF0C2244);
-    gfx_rect(px + 16, bot + 14, 145, 2, 0xFF061226);
+    gfx_draw(IMG_CH_CORNER, px + PW, top, WHITE, GFX_FLIPX);
+    for (float y = top + 36; y < bot; y += 8) { gfx_draw(IMG_CH_SIDE, px, y, WHITE, 0); gfx_draw(IMG_CH_SIDE, px + PW, y, WHITE, GFX_FLIPX); }
+    gfx_rect(px + 16, bot, PIW, 16, 0xFF0C2244);
+    gfx_rect(px + 16, bot + 14, PIW, 2, 0xFF061226);
     gfx_draw(IMG_CH_BOTTOM, px, bot, WHITE, 0);
-    gfx_draw(IMG_CH_BOTTOM, px + 161, bot, WHITE, GFX_FLIPX);
+    gfx_draw(IMG_CH_BOTTOM, px + PW, bot, WHITE, GFX_FLIPX);
     /* titulo en marquesina */
-    const char *title = TXT_ES[75];
+    const char *title = TXT[75];
     int tw = text_width(FONT_MED, title);
-    gfx_clip((int)px + 16, (int)top, 145, 30);
-    float tx = tw <= 145 ? px + 16 + (145 - tw) / 2.0f : px + 16 - fmodf(frame * 0.6f, tw + 40) + 40;
+    gfx_clip((int)px + 16, (int)top, PIW, 30);
+    float tx = tw <= PIW ? px + 16 + (PIW - tw) / 2.0f : px + 16 - fmodf(frame * 0.6f, tw + 40) + 40;
     text_draw(FONT_MED, tx, top + 4, title, WHITE);
-    if (tw > 145) text_draw(FONT_MED, tx + tw + 40, top + 4, title, WHITE);
+    if (tw > PIW) text_draw(FONT_MED, tx + tw + 40, top + 4, title, WHITE);
     gfx_noclip();
     /* cuadricula de 3 columnas, 5 filas visibles */
     float gy = top + 40;
-    gfx_clip((int)px, (int)gy - 3, 177, (int)(bot - gy + 2));
+    gfx_clip((int)px, (int)gy - 3, PW + 16, (int)(bot - gy + 2));
     for (int i = 0; i < ch_n; i++) {
-        int row = i / 3 - ch_scroll;
-        if (row < 0 || row > 4) continue;
-        float x = px + 11 + (i % 3) * 54, y = gy + row * 38;
+        int row = i / CH_COLS - ch_scroll;
+        if (row < 0 || row > CH_ROWS - 1) continue;
+        float x = px + 19 + (i % CH_COLS) * 54, y = gy + row * 38;
         int t = ch_list[i];
         int bad = (plant_defs[t].flags & PF_AQUATIC) && G.rows < 6;
         gfx_draw(plant_defs[t].packet, x, y, ch_is_chosen(t) || bad ? 0xFF505050 : WHITE, 0);
-        if (i == ch_cur && intro_phase == IP_CHOOSE) ui_cursor(x, y, 47, 33, frame);
+        if (i == ch_cur && !ch_side && intro_phase == IP_CHOOSE) draw_corners(x, y, 47, 33, IMG_CUR_OK);
     }
     gfx_noclip();
-    int rows = (ch_n + 2) / 3;
-    if (ch_scroll > 0) gfx_draw(IMG_CH_UP, px + 84, gy - 8, WHITE, 0);
-    if (ch_scroll + 5 < rows) gfx_draw(IMG_CH_DOWN, px + 84, bot + 6, WHITE, 0);
+    int rows = (ch_n + CH_COLS - 1) / CH_COLS;
+    if (ch_scroll > 0) gfx_draw(IMG_CH_UP, px + PW / 2 - 4, gy - 8, WHITE, 0);
+    if (ch_scroll + CH_ROWS < rows) gfx_draw(IMG_CH_DOWN, px + PW / 2 - 4, bot + 6, WHITE, 0);
     /* ayuda (en la calle, a la derecha) */
     if (intro_phase == IP_CHOOSE && ch_n) {
-        char b[64]; int t = ch_list[ch_cur];
-        text_draw_centered(FONT_SMALL, 380, 8, TXT_ES[plant_txt_name[t]], WHITE);
-        snprintf(b, sizeof(b), "COSTE: %d", plant_defs[t].cost);
-        text_draw_centered(FONT_SMALL, 380, 26, b, 0xFF80FFFF);
+        char b[64]; int t = ch_side && ch_sidx < nseeds ? seeds[ch_sidx] : ch_list[ch_cur];
+        text_draw_centered(FONT_SMALL, 392, 8, TXT[plant_txt_name[t]], WHITE);
+        snprintf(b, sizeof(b), XS(XS_COST), plant_defs[t].cost);
+        text_draw_centered(FONT_SMALL, 392, 26, b, 0xFF80FFFF);
         snprintf(b, sizeof(b), "%d/%d", nseeds, ch_need());
-        text_draw_centered(FONT_SMALL, 380, 198, b, 0xFF00FFFF);
-        text_draw_centered(FONT_SMALL, 380, 216, "X ELEGIR  O QUITAR", 0xFFE0E0E0);
-        text_draw_centered(FONT_SMALL, 380, 234, "TRIÁNGULO: ¡A JUGAR!", nseeds >= ch_need() ? 0xFF00FFFF : 0xFF909090);
-        text_draw_centered(FONT_SMALL, 380, 252, "START PAUSA", 0xFFE0E0E0);
+        text_draw_centered(FONT_SMALL, 392, 150, b, 0xFF00FFFF);
+        text_draw_centered(FONT_SMALL, 392, 172, XS(ch_side ? XS_X_REMOVE : XS_X_PICK), 0xFFE0E0E0);
+        text_draw_centered(FONT_SMALL, 392, 234, XS(XS_TRIANGLE), nseeds >= ch_need() ? 0xFF00FFFF : 0xFF909090);
+        text_draw_centered(FONT_SMALL, 392, 252, XS(XS_PLAY), nseeds >= ch_need() ? 0xFF00FFFF : 0xFF909090);
+        text_draw_centered(FONT_SMALL, 392, 194, XS(XS_START_PAUSE), 0xFFE0E0E0);
     }
 }
 
@@ -1960,6 +2041,7 @@ static void draw_zombie(Zombie *z, float base)
     if (z->type == ZT_BOSS) return;   /* se dibuja aparte, encima del seto */
     float yo = z->yoff + (z->balloon ? -G.rh * 0.6f : 0);
     if (z->inwater) yo += G.rh * 0.22f;     /* nadando: la animacion 40-49 ya esconde las piernas */
+    if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
     else if (z->state < ZS_DYING && !z->under) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
     draw_anim_at(&z->anim, z->x, base + 1 + yo, col, z->dir > 0);
     if (z->butter > 0 && z->state < ZS_DYING) {            /* mantequilla en la cabeza */
@@ -1967,6 +2049,7 @@ static void draw_zombie(Zombie *z, float base)
         if (z_track_pos(z, 19, &hx, &hy, &img)) draw_world_c(IMG_BUTTER, hx, hy - 4, 1, WHITE);
         else if (z->anim.def) draw_world_c(IMG_BUTTER, z->x + 2, base + 1 + yo - (z->anim.def->bbox[3] - z->anim.def->bbox[1]) * 0.85f, 1, WHITE);
     }
+    if (z->kelped) gfx_noclip();
 }
 
 static void proj_img(Proj *q, int *img, float *sc)
@@ -1990,11 +2073,11 @@ void board_draw(void)
     else if (lv == 1 || lv == 2) draw_world(IMG_SOD_3ROW, G.x0 - 4, cell_y(1) - 2, WHITE);
     if (lv == 4) gfx_rect(sxw(cell_x(3)) - 1, syw(G.y0), 2, G.rows * G.rh * G.ws, 0xC02020FF);   /* linea roja de bolos */
     for (int r = 0; r < G.rows; r++) {
-        float base = cell_y(r) + G.rh - 3;
+        float base0 = cell_y(r) + G.rh - 3;
         if ((M[r].state < 2 || M[r].state == 3) && (state != ST_INTRO || intro_phase >= IP_MOW)) {
             /* como el J2ME: 35x35 con la parte de arriba 6 px por encima de la casilla */
             int img = lane[r] == LN_ROOF ? IMG_ROOFCLEANER : IMG_MOWER;
-            float my = cell_y(r) + G.rh * 0.5f - (lane[r] == LN_ROOF ? 14 : 24);
+            float my = cy_x(r, M[r].x) + G.rh * 0.5f - (lane[r] == LN_ROOF ? 6 : 24);
             if (M[r].state == 3) {                 /* hundiendose: se recorta por la superficie del agua */
                 gfx_clip(0, 0, SCREEN_W, (int)syw(cell_y(r) + G.rh * 0.75f));
                 draw_world(img, M[r].x, my + M[r].sink, ((u32)(255 - M[r].sink * 6) << 24) | 0xFFFFFF);
@@ -2002,6 +2085,7 @@ void board_draw(void)
             } else draw_world(img, M[r].x, my, WHITE);
         }
         for (int c = 0; c < COLS; c++) {
+            float base = cy_c(r, c) + G.rh - 3;
             if (grave[r][c]) draw_world_c(IMG_GRAVE1 + grave[r][c] - 1, cell_x(c) + G.cw / 2, base - 14, 1, WHITE);
             if (crater[r][c]) draw_world_c(IMG_CRATER, cell_x(c) + G.cw / 2, base - 8, 0.8f, WHITE);
             for (int l = 0; l < 2; l++) {
@@ -2014,7 +2098,8 @@ void board_draw(void)
                 if (p->ladder) draw_world_c(IMG_LADDER, cell_x(c) + G.cw / 2, base - 18, 0.8f, WHITE);
             }
         }
-        for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].row == r && Z[i].x < view_right() + 40) draw_zombie(&Z[i], base);
+        for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].row == r && Z[i].x < view_right() + 40) draw_zombie(&Z[i], cy_x(r, Z[i].x) + G.rh - 3);
+        (void)base0;
         for (int i = 0; i < MAXP; i++) {
             Proj *q = &PJ[i];
             if (!q->alive || q->row != r) continue;
@@ -2056,22 +2141,18 @@ void board_draw(void)
         gfx_rect(SCREEN_W - 110, SCREEN_H - 24, 100 * hpf, 4, 0xFF2020FF);
     }
     draw_parts();
-    /* cursor de esquinas naranjas */
+    /* cursor del PvZBV: 4 esquinas que se deslizan a la casilla; rojas si ahi no se puede plantar */
     if (mode != MODE_BANK && state == ST_PLAY) {
-        float cx = sxw(cell_x(cur_c)), cy = syw(cell_y(cur_r)), cw = G.cw * G.ws, ch = G.rh * G.ws, L8 = 8;
-        u32 bc = (frame / 12) & 1 ? 0xFF00A0FF : 0xFF0080FF;
-        if (held >= 0 && !can_plant(seed_type(held), cur_r, cur_c)) bc = 0xFF4040FF;
-        gfx_rect(cx, cy, L8, 2, bc); gfx_rect(cx, cy, 2, L8, bc);
-        gfx_rect(cx + cw - L8, cy, L8, 2, bc); gfx_rect(cx + cw - 2, cy, 2, L8, bc);
-        gfx_rect(cx, cy + ch - 2, L8, 2, bc); gfx_rect(cx, cy + ch - L8, 2, L8, bc);
-        gfx_rect(cx + cw - L8, cy + ch - 2, L8, 2, bc); gfx_rect(cx + cw - 2, cy + ch - L8, 2, L8, bc);
-        if (held >= 0 && can_plant(seed_type(held), cur_r, cur_c)) {
+        float cx = sxw(cell_x(cur_c)), cy = syw(cy_c(cur_r, cur_c)), cw = G.cw * G.ws, ch = G.rh * G.ws;
+        int bad = held >= 0 && !can_plant(seed_type(held), cur_r, cur_c);
+        if (held >= 0 && !bad) {                 /* la planta elegida se ve en la casilla, como en el PvZBV */
             static ReAnim ghost;
             int t = seed_type(held); const PlantDef *d = pdef(t);
             if (ghost.def != reanim_get(d->re)) reanim_play(&ghost, d->re, d->idle_s, d->idle_e, 1);
             ghost.hide_mask[0] = d->hide;
-            draw_anim_at(&ghost, cell_x(cur_c) + G.cw / 2, cell_y(cur_r) + G.rh - 3, 0x90FFFFFF, 0);
+            draw_anim_at(&ghost, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF, 0);
         }
+        cursor_to(cx, cy, cw, ch, bad ? IMG_CUR_BAD : IMG_CUR_OK);
         if (mode == MODE_SHOVEL) gfx_draw_ex(IMG_SHOVEL, cx + cw / 2, cy + ch / 2, 19, 22, 0.8f, 0.8f, 0, WHITE, 0);
     }
     for (int i = 0; i < MAXS; i++) {
@@ -2086,15 +2167,19 @@ void board_draw(void)
         float bob = sinf(frame * 0.1f) * 3, gl = 1.25f + 0.1f * sinf(frame * 0.15f);
         gfx_draw_ex(img, sxw(reward_x), syw(reward_y) + bob, img_w(img) / 2.0f, img_h(img) / 2.0f, gl, gl, 0, 0x60FFFFFF, 0);
         gfx_draw_ex(img, sxw(reward_x), syw(reward_y) + bob, img_w(img) / 2.0f, img_h(img) / 2.0f, 1, 1, 0, WHITE, 0);
-        if ((frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 200, "PULSA X PARA RECOGER", WHITE);
+        if ((frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 200, XS(XS_PRESS_X), WHITE);
     }
     draw_bank();
-    if (mode == MODE_BANK && bank_count() > 0) {
+    if (mode == MODE_BANK && bank_count() > 0 && state == ST_PLAY) {
+        float by = (conveyor ? belt_x[bank_sel] : SLOT_Y(bank_sel)) + hud_off;
+        cursor_to(2, by, 41, 31, IMG_CUR_OK);
         char buf[64]; int t = seed_type(bank_sel);
-        if (t == PL_BOWLNUT) snprintf(buf, sizeof(buf), "NUEZ");
-        else if (conveyor) snprintf(buf, sizeof(buf), "%s", plant_defs[t].name);
-        else snprintf(buf, sizeof(buf), "%s  (%d)", plant_defs[t].name, plant_defs[t].cost);
-        text_draw_centered(FONT_SMALL, SCREEN_W / 2, 40, buf, WHITE);
+        if (t == PL_BOWLNUT) snprintf(buf, sizeof(buf), "%s", XS(XS_NUT));
+        else if (conveyor) snprintf(buf, sizeof(buf), "%s", TXT[plant_txt_name[t]]);
+        else snprintf(buf, sizeof(buf), "%s  (%d)", TXT[plant_txt_name[t]], plant_defs[t].cost);
+        int tw = text_width(FONT_SMALL, buf);
+        gfx_rect(48, by + 6, tw + 8, 20, 0xA0000000);
+        text_draw(FONT_SMALL, 52, by + 7, buf, WHITE);
     }
     if (state == ST_INTRO && choosing && intro_phase >= IP_CHOOSE && intro_phase <= IP_CHOOSE_OUT) draw_chooser();
     if (state == ST_INTRO && intro_phase == IP_READY) {
@@ -2108,17 +2193,17 @@ void board_draw(void)
     if (state == ST_LOST) {
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, 0x80000000);
         text_draw_centered(FONT_BIG, SCREEN_W / 2, 110, TXT_LOSE, 0xFF4040FF);
-        if (state_timer > 150) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 150, "X: CONTINUAR", WHITE);
+        if (state_timer > 150) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 150, XS(XS_X_CONTINUE), WHITE);
     }
     if (paused) {
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, 0x80000000);
         ui_tomb_dialog(125, 44, 230, 196);
         if (pause_confirm) {
-            text_draw_centered(FONT_BIG, SCREEN_W / 2, 68, TXT_ES[pause_confirm == 1 ? 62 : 64], 0xFFE8E8E8);
-            ui_text_wrap(FONT_SMALL, 152, 100, 176, 18, TXT_ES[pause_confirm == 1 ? 63 : 65], 0xFF40FFFF, 1);
-            text_draw_centered(FONT_BIG, SCREEN_W / 2, 196, "X: SÍ   O: NO", 0xFFE8E8E8);
+            text_draw_centered(FONT_BIG, SCREEN_W / 2, 68, TXT[pause_confirm == 1 ? 62 : 64], 0xFFE8E8E8);
+            ui_text_wrap(FONT_SMALL, 152, 100, 176, 18, TXT[pause_confirm == 1 ? 63 : 65], 0xFF40FFFF, 1);
+            text_draw_centered(FONT_BIG, SCREEN_W / 2, 196, XS(XS_YES_NO), 0xFFE8E8E8);
         } else {
-            const char *it[5] = { TXT_ES[59], TXT_ES[49], TXT_ES[21], TXT_ES[g_opt_sound ? 41 : 42], g_opt_music ? "MÚSICA: SÍ" : "MÚSICA: NO" };
+            const char *it[5] = { TXT[59], TXT[49], TXT[21], TXT[g_opt_sound ? 41 : 42], XS(g_opt_music ? XS_MUSIC_ON : XS_MUSIC_OFF) };
             for (int i = 0; i < 5; i++)
                 text_draw_centered(FONT_BIG, SCREEN_W / 2, 70 + i * 28, it[i], i == pause_sel ? ((frame / 10) & 1 ? 0xFF40FFFF : 0xFF00D0FF) : 0xFFE8E8E8);
         }

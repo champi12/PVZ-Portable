@@ -48,6 +48,8 @@ ReDef *reanim_get(int id)
     return d;
 }
 
+int reanim_id(ReDef *d) { return d ? (int)(d - defs) : -1; }
+
 void reanim_unload_all(void)
 {
     for (int i = 0; i < RE_COUNT; i++) if (defs[i].block) { free(defs[i].block); defs[i].block = NULL; }

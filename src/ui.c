@@ -5,6 +5,70 @@
 #include "gfx.h"
 #include "audio.h"
 #include "ui.h"
+#include "texts.h"
+#include <psputility.h>
+
+int g_lang = LANG_ES;
+const char *const *TXT = TXT_ES;
+void ui_set_lang(int lang) { if (lang < 0 || lang >= LANG_COUNT) lang = LANG_EN; g_lang = lang; TXT = TXT_LANGS[lang]; }
+int ui_system_lang(void)
+{
+    int v = PSP_SYSTEMPARAM_LANGUAGE_ENGLISH;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &v) < 0) return LANG_EN;
+    switch (v) {
+    case PSP_SYSTEMPARAM_LANGUAGE_FRENCH: return LANG_FR;
+    case PSP_SYSTEMPARAM_LANGUAGE_SPANISH: return LANG_ES;
+    case PSP_SYSTEMPARAM_LANGUAGE_GERMAN: return LANG_DE;
+    case PSP_SYSTEMPARAM_LANGUAGE_ITALIAN: return LANG_IT;
+    case PSP_SYSTEMPARAM_LANGUAGE_PORTUGUESE: return LANG_PT;
+    default: return LANG_EN;
+    }
+}
+int ui_lang_name(int lang) { static const unsigned char n[LANG_COUNT] = { 14, 15, 17, 16, 19, 18 }; return n[lang]; }
+int ui_logo(void) { static const short l[LANG_COUNT] = { 17, 651, 652, 653, 137, 137 }; return l[g_lang]; }
+
+static const char *const xs_tab[XS_COUNT][LANG_COUNT] = {
+    /*            EN                       FR                          DE                          IT                          PT                          ES */
+    { "MUSIC: ON",              "MUSIQUE : OUI",              "MUSIK: AN",                  "MUSICA: SÌ",                 "MÚSICA: SIM",                "MÚSICA: SÍ" },
+    { "MUSIC: OFF",             "MUSIQUE : NON",              "MUSIK: AUS",                 "MUSICA: NO",                 "MÚSICA: NÃO",                "MÚSICA: NO" },
+    { "LEVEL SELECT",           "CHOIX DU NIVEAU",            "LEVEL WÄHLEN",               "SCEGLI LIVELLO",             "ESCOLHER NÍVEL",             "ELEGIR NIVEL" },
+    { "COST: %d",               "COÛT : %d",                  "KOSTEN: %d",                 "COSTO: %d",                  "CUSTO: %d",                  "COSTE: %d" },
+    { "X: YES   O: NO",         "X : OUI   O : NON",          "X: JA   O: NEIN",            "X: SÌ   O: NO",              "X: SIM   O: NÃO",            "X: SÍ   O: NO" },
+    { "X: PICK",                "X : CHOISIR",                "X: WÄHLEN",                  "X: SCEGLI",                  "X: ESCOLHER",                "X: ELEGIR" },
+    { "TRIANGLE:",              "TRIANGLE :",                 "DREIECK:",                   "TRIANGOLO:",                 "TRIÂNGULO:",                 "TRIÁNGULO:" },
+    { "LET'S ROCK!",            "C'EST PARTI !",              "LOS GEHT'S!",                "SI COMINCIA!",               "VAMOS LÁ!",                  "¡A JUGAR!" },
+    { "START: PAUSE",           "START : PAUSE",              "START: PAUSE",               "START: PAUSA",               "START: PAUSA",               "START: PAUSA" },
+    { "PRESS X TO COLLECT",     "APPUIE SUR X",               "DRÜCKE X",                   "PREMI X",                    "APERTE X",                   "PULSA X PARA RECOGER" },
+    { "X: CONTINUE",            "X : CONTINUER",              "X: WEITER",                  "X: CONTINUA",                "X: CONTINUAR",               "X: CONTINUAR" },
+    { "X: NEXT",                "X : SUITE",                  "X: WEITER",                  "X: AVANTI",                  "X: SEGUIR",                  "X: SEGUIR" },
+    { "MOVE THE CURSOR AROUND YOUR LAWN WITH THE D-PAD. PRESS LEFT ON THE FIRST COLUMN TO REACH YOUR SEED BOX.||X: PICK A SEED PACKET AND PLANT IT.|O: CANCEL.|TRIANGLE: SHOVEL.|L AND R: CHANGE SEED PACKET.|START: PAUSE.||SUN IS COLLECTED BY MOVING THE CURSOR NEAR IT.",
+      "DÉPLACE LE CURSEUR SUR LA PELOUSE AVEC LA CROIX. GAUCHE SUR LA PREMIÈRE COLONNE : BOÎTE À GRAINES.||X : CHOISIR UN SACHET ET PLANTER.|O : ANNULER.|TRIANGLE : PELLE.|L ET R : CHANGER DE SACHET.|START : PAUSE.||LE SOLEIL SE RAMASSE EN APPROCHANT LE CURSEUR.",
+      "BEWEGE DEN CURSOR MIT DEM STEUERKREUZ. LINKS IN DER ERSTEN SPALTE: SAMENBOX.||X: SAMENTÜTE WÄHLEN UND PFLANZEN.|O: ABBRECHEN.|DREIECK: SCHAUFEL.|L UND R: SAMENTÜTE WECHSELN.|START: PAUSE.||SONNEN SAMMELST DU, WENN DER CURSOR IN DER NÄHE IST.",
+      "MUOVI IL CURSORE SUL PRATO CON LA CROCE. SINISTRA SULLA PRIMA COLONNA: SCATOLA DEI SEMI.||X: SCEGLI UN SEME E PIANTALO.|O: ANNULLA.|TRIANGOLO: PALA.|L E R: CAMBIA SEME.|START: PAUSA.||IL SOLE SI RACCOGLIE AVVICINANDO IL CURSORE.",
+      "MOVA O CURSOR PELO GRAMADO COM O DIRECIONAL. ESQUERDA NA PRIMEIRA COLUNA: CAIXA DE SEMENTES.||X: ESCOLHER UM PACOTE E PLANTAR.|O: CANCELAR.|TRIÂNGULO: PÁ.|L E R: TROCAR DE PACOTE.|START: PAUSA.||O SOL É COLETADO AO APROXIMAR O CURSOR.",
+      "MUEVE EL CURSOR POR EL CÉSPED CON LA CRUCETA. IZQUIERDA EN LA PRIMERA COLUMNA: CAJA DE SEMILLAS.||X: ELIGE UN SOBRE Y PLANTA.|O: CANCELA.|TRIÁNGULO: PALA.|L Y R: CAMBIAN DE SOBRE.|START: PAUSA.||LOS SOLES SE RECOGEN SOLOS AL PASAR EL CURSOR CERCA." },
+    { "PLANTS VS. ZOMBIES|J2ME VERSION 4.6.0 BY POPCAP AND EA, PORTED TO PSP IN NATIVE C AT 60 FPS.",
+      "PLANTES CONTRE ZOMBIES|VERSION J2ME 4.6.0 DE POPCAP ET EA, PORTÉE SUR PSP EN C NATIF À 60 IPS.",
+      "PFLANZEN GEGEN ZOMBIES|J2ME-VERSION 4.6.0 VON POPCAP UND EA, FÜR DIE PSP IN NATIVEM C MIT 60 FPS.",
+      "PIANTE CONTRO ZOMBI|VERSIONE J2ME 4.6.0 DI POPCAP ED EA, PORTATA SU PSP IN C NATIVO A 60 FPS.",
+      "PLANTAS VS. ZUMBIS|VERSÃO J2ME 4.6.0 DA POPCAP E EA, PORTADA PARA PSP EM C NATIVO A 60 FPS.",
+      "PLANTAS CONTRA ZOMBIS|VERSIÓN J2ME 4.6.0 DE POPCAP Y EA, PORTADA A PSP EN C NATIVO A 60 FPS." },
+    { "THE GAME, ITS GRAPHICS, TEXTS AND SOUNDS BELONG TO POPCAP GAMES AND ELECTRONIC ARTS.",
+      "LE JEU, SES GRAPHISMES, TEXTES ET SONS APPARTIENNENT À POPCAP GAMES ET ELECTRONIC ARTS.",
+      "DAS SPIEL, SEINE GRAFIKEN, TEXTE UND SOUNDS GEHÖREN POPCAP GAMES UND ELECTRONIC ARTS.",
+      "IL GIOCO, LA GRAFICA, I TESTI E I SUONI APPARTENGONO A POPCAP GAMES ED ELECTRONIC ARTS.",
+      "O JOGO, SEUS GRÁFICOS, TEXTOS E SONS PERTENCEM À POPCAP GAMES E À ELECTRONIC ARTS.",
+      "EL JUEGO, SUS GRÁFICOS, TEXTOS Y SONIDOS SON PROPIEDAD DE POPCAP GAMES Y ELECTRONIC ARTS." },
+    { "DAY", "JOUR", "TAG", "GIORNO", "DIA", "DÍA" },
+    { "NIGHT", "NUIT", "NACHT", "NOTTE", "NOITE", "NOCHE" },
+    { "POOL", "PISCINE", "POOL", "PISCINA", "PISCINA", "PISCINA" },
+    { "FOG", "BROUILLARD", "NEBEL", "NEBBIA", "NEBLINA", "NIEBLA" },
+    { "ROOF", "TOIT", "DACH", "TETTO", "TELHADO", "TEJADO" },
+    { "WALL-NUT", "NOIX", "WALLNUSS", "NOCE", "NOZ", "NUEZ" },
+    { "X: REMOVE", "X : ENLEVER", "X: ENTFERNEN", "X: TOGLI", "X: TIRAR", "X: QUITAR" },
+    { "X: PLAY   O: BACK", "X : JOUER   O : RETOUR", "X: SPIELEN   O: ZURÜCK", "X: GIOCA   O: INDIETRO", "X: JOGAR   O: VOLTAR", "X: JUGAR   O: VOLVER" },
+};
+const char *XS(int id) { return id >= 0 && id < XS_COUNT ? xs_tab[id][g_lang] : ""; }
 
 int g_opt_sound = 1, g_opt_music = 1, ui_wrap_center;
 static void line_out(int font, float x, float y, const char *s, u32 col) { if (ui_wrap_center) text_draw_centered(font, x, y, s, col); else text_draw(font, x, y, s, col); }

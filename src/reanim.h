@@ -36,6 +36,7 @@ typedef struct {
 int   reanim_init(const char *pak);
 ReDef *reanim_get(int id);           /* carga bajo demanda (y sus imagenes) */
 void  reanim_unload_all(void);
+int   reanim_id(ReDef *d);          /* numero de archivo de una definicion cargada (-1 si NULL) */
 /* rango [start,end] de la pista "de control" (sin imagen) numero n; -1 si no existe */
 int   reanim_range(ReDef *d, int track, int *start, int *end);
 /* rango de reposo: pista de control visible en el frame 0 */

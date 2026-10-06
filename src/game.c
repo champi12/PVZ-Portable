@@ -22,8 +22,8 @@
 #define IMG_POPCAP 439
 #define IMG_L_URL 606
 #define IMG_L_GRASS_A 607
-#define IMG_L_GRASS_B 608
-#define IMG_L_GRASS_C 609
+#define IMG_L_GRASS_B 609    /* l4: tramo central de 40 px */
+#define IMG_L_GRASS_C 608    /* l3: extremo derecho */
 #define IMG_L_MOWER 610
 #define IMG_L_CLIP 611
 #define IMG_CARD 392
@@ -42,7 +42,7 @@
 enum { SC_BOOT, SC_TITLE, SC_OPTIONS, SC_ALMANAC, SC_ABOUT, SC_LEVELS, SC_DAVE, SC_BOARD, SC_REWARD };
 enum { MI_ADVENTURE, MI_OPTIONS, MI_ALMANAC, MI_LEVELS, MI_ABOUT, MI_EXIT, MI_COUNT };
 static int scene, frame, quit, timer, menu_sel, hand_t, confirm;
-static int level, max_level, sel_level;
+static int level, max_level, sel_level, lang_user;   /* lang_user: idioma elegido en opciones (si no, el de la consola) */
 #define opt_sound g_opt_sound
 #define opt_music g_opt_music
 static int avail[PL_COUNT], navail;
@@ -58,7 +58,7 @@ static void save_game(void)
 {
     SceUID f = sceIoOpen(SAVE_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (f < 0) return;
-    int d[4] = { 0x5A565032, level, max_level, (opt_sound ? 1 : 0) | (opt_music ? 2 : 0) | 4 };
+    int d[4] = { 0x5A565032, level, max_level, (opt_sound ? 1 : 0) | (opt_music ? 2 : 0) | 4 | (lang_user ? (g_lang + 1) << 8 : 0) };
     sceIoWrite(f, d, sizeof(d)); sceIoClose(f);
 }
 static void load_game(void)
@@ -70,6 +70,7 @@ static void load_game(void)
     if (sceIoRead(f, d, sizeof(d)) == sizeof(d) && d[0] == 0x5A565032) {
         level = d[1]; max_level = d[2];
         if (d[3] & 4) { opt_sound = d[3] & 1; opt_music = (d[3] >> 1) & 1; }
+        if ((d[3] >> 8) & 7) { lang_user = 1; ui_set_lang(((d[3] >> 8) & 7) - 1); }
     }
     if (level < 0 || level > 49) level = 0;
     if (max_level < level) max_level = level;
@@ -168,9 +169,9 @@ static int alm_vis = 8;   /* lineas visibles de la ficha (lo fija el dibujo) */
 #define ALM_VIS alm_vis
 static const char *alm_text(void)
 {
-    if (alm_page == 3) return "MUEVE EL CURSOR POR EL CÉSPED O POR TU CAJA DE SEMILLAS CON LA CRUCETA.||X: ABRE LA CAJA DE SEMILLAS, ELIGE UN SOBRE Y PLANTA.|O: CANCELA.|TRIÁNGULO: PALA.|L Y R: CAMBIAN DE SOBRE.|START: PAUSA.||LOS SOLES SE RECOGEN SOLOS AL PASAR EL CURSOR CERCA.";
+    if (alm_page == 3) return XS(XS_HELP);
     int t = alm_list[alm_cur];
-    return TXT_ES[alm_page == 1 ? plant_txt_desc[t] : zombie_txt_desc[t]];
+    return TXT[alm_page == 1 ? plant_txt_desc[t] : zombie_txt_desc[t]];
 }
 static void almanac_open_detail(void)
 {
@@ -181,6 +182,7 @@ static void almanac_open_detail(void)
 void game_init(void)
 {
     srand(sceKernelGetSystemTimeLow());
+    ui_set_lang(ui_system_lang());
     load_game();
     scene = SC_BOOT; timer = 0;
 }
@@ -216,6 +218,10 @@ void game_update(void)
     if (frame == 360) { scene = SC_REWARD; reward = PL_POTATOMINE; timer = 0; alm_page = 1; alm_n = 1; alm_list[0] = reward; alm_cur = 0; almanac_open_detail(); alm_detail = 0; }
     if (frame == 400) { level = 40; go_dave_or_board(); }
     if (frame == 440) { menu_sel = 0; scene = SC_TITLE; confirm = 1; }
+    if (frame == 480) { confirm = 0; scene = SC_LEVELS; sel_level = 13; max_level = 17; }
+    if (frame == 520) { scene = SC_OPTIONS; menu_sel = 0; ui_set_lang(LANG_DE); }
+    if (frame == 560) { scene = SC_TITLE; ui_set_lang(LANG_FR); }
+    if (frame == 600) { enter_almanac(); alm_page = 1; almanac_build(); alm_cur = 3; almanac_open_detail(); }
     if (scene == SC_DAVE) reanim_update(&dave, 1.0f / 60.0f);
     if (scene != SC_BOOT) return;
 #else
@@ -229,7 +235,7 @@ void game_update(void)
         if (timer == 1) { img_load(IMG_EA); img_load(IMG_POPCAP); apply_options(); }
         if (timer == 190) {                  /* carga real de lo comun mientras avanza la barra */
             font_load(FONT_SMALL); font_load(FONT_BIG); font_load(FONT_NUM);
-            img_load(IMG_TITLE_BG); img_load(IMG_LOGO_ES);
+            img_load(IMG_TITLE_BG); img_load(ui_logo());
             sfx_preload(SFX_BUTTONCLICK); sfx_preload(SFX_TAP); sfx_preload(SFX_SEEDLIFT);
         }
         if (timer > 330 || (timer > 200 && btn_pressed(PSP_CTRL_CROSS))) enter_title();
@@ -267,14 +273,20 @@ void game_update(void)
             if (btn_pressed(PSP_CTRL_CIRCLE)) { confirm = 0; sfx_play(SFX_TAP); }
             break;
         }
-        if (menu_up()) { menu_sel = (menu_sel + 3) % 4; sfx_play(SFX_TAP); }
-        if (menu_down()) { menu_sel = (menu_sel + 1) % 4; sfx_play(SFX_TAP); }
+        /* 0 idioma (en la ventanita de la lapida), 1 sonido, 2 musica, 3 borrar datos, 4 atras */
+        if (menu_up()) { menu_sel = (menu_sel + 4) % 5; sfx_play(SFX_TAP); }
+        if (menu_down()) { menu_sel = (menu_sel + 1) % 5; sfx_play(SFX_TAP); }
         int back = btn_pressed(PSP_CTRL_CIRCLE);
+        if (menu_sel == 0 && (btn_pressed(PSP_CTRL_LEFT) || btn_pressed(PSP_CTRL_RIGHT))) {
+            ui_set_lang((g_lang + (btn_pressed(PSP_CTRL_LEFT) ? LANG_COUNT - 1 : 1)) % LANG_COUNT);
+            lang_user = 1; save_game(); sfx_play(SFX_TAP);
+        }
         if (btn_pressed(PSP_CTRL_CROSS)) {
             sfx_play(SFX_BUTTONCLICK);
-            if (menu_sel == 0) opt_sound = !opt_sound;
-            else if (menu_sel == 1) opt_music = !opt_music;
-            else if (menu_sel == 2) confirm = 1;
+            if (menu_sel == 0) { ui_set_lang((g_lang + 1) % LANG_COUNT); lang_user = 1; }
+            else if (menu_sel == 1) opt_sound = !opt_sound;
+            else if (menu_sel == 2) opt_music = !opt_music;
+            else if (menu_sel == 3) confirm = 1;
             else back = 1;
             apply_options(); save_game();
         }
@@ -370,16 +382,16 @@ void game_update(void)
  * el cortacesped (l5) la recorre segun el progreso echando recortes (l6, 2 frames) y la web (l1) debajo */
 static void draw_loading(float prog)
 {
-    gfx_set_vscale(J2ME_VS);
-    gfx_rect(0, 0, 480, 320, 0xFF000000);
+    /* a escala 1:1 (las posiciones del J2ME 480x320 pasadas a 272 de alto) para que no haya costuras */
+    gfx_rect(0, 0, SCREEN_W, SCREEN_H, 0xFF000000);
     int wa = img_w(IMG_L_GRASS_A), wb = img_w(IMG_L_GRASS_B), wc = img_w(IMG_L_GRASS_C), wm = img_w(IMG_L_MOWER);
     int bar = 360 - 360 % wb + wa + wc;
-    float x = 240 - bar / 2, y = 163;
+    float x = 240 - bar / 2, y = (int)(163 * J2ME_VS);
     gfx_draw(IMG_L_GRASS_A, x, y, WHITE, 0);
     float tx = x + wa;
     for (int k = 0; k < (bar - wa - wc) / wb; k++, tx += wb) gfx_draw(IMG_L_GRASS_B, tx, y, WHITE, 0);
     gfx_draw(IMG_L_GRASS_C, tx, y, WHITE, 0);
-    float mx = x + prog * (bar - wm);
+    float mx = (int)(x + prog * (bar - wm));
     if (prog < 1) {
         int cw = img_w(IMG_L_CLIP) / 2, ch = img_h(IMG_L_CLIP), b = (frame / 6) & 1;
         float cx = mx - cw + 38;
@@ -389,7 +401,6 @@ static void draw_loading(float prog)
     }
     gfx_draw(IMG_L_MOWER, mx, y - 18, WHITE, 0);
     gfx_draw(IMG_L_URL, 240 - img_w(IMG_L_URL) / 2, y + 15 + 42, WHITE, 0);
-    gfx_set_vscale(1);
 }
 
 static void draw_boot(void)
@@ -417,7 +428,7 @@ static void draw_slab(int img, float x, float y, int flip, const char *txt, int 
 static void draw_menu_bg(u32 col)
 {
     gfx_draw(IMG_TITLE_BG, 0, 0, col, 0);
-    gfx_draw(IMG_LOGO_ES, 0, 2, col, 0);
+    gfx_draw(ui_logo(), 0, 2, col, 0);
 }
 /* aviso con la lapida morada del J2ME (se dibuja a escala 1:1, fuera de la vista 480x320) */
 static void draw_confirm(const char *title, const char *body)
@@ -428,7 +439,7 @@ static void draw_confirm(const char *title, const char *body)
     ui_tomb_dialog(110, 50, 260, 180);
     text_draw_centered(FONT_BIG, SCREEN_W / 2, 74, title, 0xFFE8E8E8);
     ui_text_wrap(FONT_SMALL, 136, 106, 208, 18, body, 0xFF40FFFF, 1);
-    text_draw_centered(FONT_BIG, SCREEN_W / 2, 184, "X: SÍ   O: NO", 0xFFE8E8E8);
+    text_draw_centered(FONT_BIG, SCREEN_W / 2, 184, XS(XS_YES_NO), 0xFFE8E8E8);
     gfx_set_vscale(vs);
 }
 
@@ -441,13 +452,13 @@ static void draw_title(void)
     snprintf(buf, sizeof(buf), "%d-%d", level / 10 + 1, level % 10 + 1);
     text_draw_centered(FONT_SMALL, 335, 42, buf, 0xFF40FFFF);
     u32 c = menu_sel == MI_ADVENTURE ? ((frame / 10) & 1 ? 0xFF40FFFF : 0xFF00E0FF) : 0xFFE8E8E8;
-    text_draw_centered(FONT_MENU, 335, 65, TXT_ES[33], c);
-    draw_slab(IMG_SLAB_A, 241, 96, 0, TXT_ES[23], menu_sel == MI_OPTIONS);
-    draw_slab(IMG_SLAB_B, 241, 137, 0, TXT_ES[82], menu_sel == MI_ALMANAC);
-    draw_slab(IMG_SLAB_A, 241, 177, GFX_FLIPX, "ELEGIR NIVEL", menu_sel == MI_LEVELS);
-    draw_slab(IMG_SLAB_B, 241, 217, GFX_FLIPX, TXT_ES[47], menu_sel == MI_ABOUT);
+    text_draw_centered(FONT_MENU, 335, 65, TXT[33], c);
+    draw_slab(IMG_SLAB_A, 241, 96, 0, TXT[23], menu_sel == MI_OPTIONS);
+    draw_slab(IMG_SLAB_B, 241, 137, 0, TXT[82], menu_sel == MI_ALMANAC);
+    draw_slab(IMG_SLAB_A, 241, 177, GFX_FLIPX, XS(XS_PICK_LEVEL), menu_sel == MI_LEVELS);
+    draw_slab(IMG_SLAB_B, 241, 217, GFX_FLIPX, TXT[47], menu_sel == MI_ABOUT);
     gfx_draw(IMG_EXIT, 457, 297, menu_sel == MI_EXIT ? ((frame / 10) & 1 ? WHITE : 0xFF80FFFF) : 0xFFB0B0B0, 0);
-    if (menu_sel == MI_EXIT) text_draw(FONT_SMALL, 452 - text_width(FONT_SMALL, TXT_ES[3]), 298, TXT_ES[3], 0xFF40FFFF);
+    if (menu_sel == MI_EXIT) text_draw(FONT_SMALL, 452 - text_width(FONT_SMALL, TXT[3]), 298, TXT[3], 0xFF40FFFF);
     if (hand_t) {                          /* mano de zombi (443) saliendo de la tierra */
         float k = hand_t < 30 ? hand_t / 30.0f : 1;
         float shake = hand_t < 30 ? sinf(hand_t * 1.3f) * 2 : 0;
@@ -456,7 +467,7 @@ static void draw_title(void)
         gfx_noclip();
         if (hand_t > 70) gfx_rect(0, 0, 480, 320, ((u32)((hand_t - 70) * 255 / 40) << 24));
     }
-    if (confirm) draw_confirm(TXT_ES[54], TXT_ES[55]);
+    if (confirm) draw_confirm(TXT[54], TXT[55]);
     gfx_set_vscale(1);
 }
 
@@ -465,24 +476,27 @@ static void draw_options(void)
     gfx_set_vscale(J2ME_VS);
     draw_menu_bg(WHITE);
     gfx_draw(IMG_TOMB_TOP, 246, 33, WHITE, 0);
-    text_draw_centered(FONT_MENU, 335, 65, TXT_ES[23], 0xFFE8E8E8);
-    draw_slab(IMG_SLAB_A, 241, 96, 0, TXT_ES[opt_sound ? 41 : 42], menu_sel == 0);
-    draw_slab(IMG_SLAB_B, 241, 137, 0, opt_music ? "MÚSICA: SÍ" : "MÚSICA: NO", menu_sel == 1);
-    draw_slab(IMG_SLAB_A, 241, 177, GFX_FLIPX, TXT_ES[39], menu_sel == 2);
-    draw_slab(IMG_SLAB_B, 241, 217, GFX_FLIPX, TXT_ES[2], menu_sel == 3);
+    char lb[64];
+    snprintf(lb, sizeof(lb), menu_sel == 0 ? "< %s >" : "%s", TXT[ui_lang_name(g_lang)]);
+    text_draw_centered(FONT_SMALL, 335, 42, TXT[13], 0xFF40FFFF);
+    text_draw_centered(FONT_MENU, 335, 65, lb, menu_sel == 0 ? ((frame / 10) & 1 ? 0xFF40FFFF : 0xFF00E0FF) : 0xFFE8E8E8);
+    draw_slab(IMG_SLAB_A, 241, 96, 0, TXT[opt_sound ? 41 : 42], menu_sel == 1);
+    draw_slab(IMG_SLAB_B, 241, 137, 0, XS(opt_music ? XS_MUSIC_ON : XS_MUSIC_OFF), menu_sel == 2);
+    draw_slab(IMG_SLAB_A, 241, 177, GFX_FLIPX, TXT[39], menu_sel == 3);
+    draw_slab(IMG_SLAB_B, 241, 217, GFX_FLIPX, TXT[2], menu_sel == 4);
     gfx_draw(IMG_BACK, 457, 297, WHITE, 0);
-    if (confirm) draw_confirm(TXT_ES[56], TXT_ES[57]);
+    if (confirm) draw_confirm(TXT[56], TXT[57]);
     gfx_set_vscale(1);
 }
 
 static void draw_about(void)
 {
     ui_frame_bg();
-    ui_title_bar(42, 15, 396, 423, 40, TXT_ES[47], FONT_BIG);
+    ui_title_bar(42, 15, 396, 423, 40, TXT[47], FONT_BIG);
     ui_panel(24, 60, 432, 190, 136, 37, 514);
     ui_text_wrap(FONT_MED, 44, 76, 392, 19,
-        "PLANTAS CONTRA ZOMBIS|VERSIÓN J2ME 4.6.0 DE POPCAP Y EA, PORTADA A PSP EN C NATIVO A 60 FPS.||"
-        "EL JUEGO, SUS GRÁFICOS, TEXTOS Y SONIDOS SON PROPIEDAD DE POPCAP GAMES Y ELECTRONIC ARTS.", 0xFF101010, 1);
+        XS(XS_ABOUT1), 0xFF101010, 1);
+    ui_text_wrap(FONT_MED, 44, 76 + 19 * (ui_text_wrap(FONT_MED, 0, 0, 392, 19, XS(XS_ABOUT1), 0, 0) + 1), 392, 19, XS(XS_ABOUT2), 0xFF101010, 1);
     gfx_draw(IMG_BACK, 455, 250, WHITE, 0);
 }
 
@@ -497,10 +511,10 @@ static void draw_card(int plant, int t, int scroll, int top_extra)
     if (plant) {
         gfx_draw(392, 24, y0, WHITE, 0);
         gfx_draw(plant_defs[t].packet, 31, y0 + 8, WHITE, 0);
-        ui_title_bar(87, y0 + 8, 369, 595, 158, TXT_ES[plant_txt_name[t]], FONT_BIG);
+        ui_title_bar(87, y0 + 8, 369, 595, 158, TXT[plant_txt_name[t]], FONT_BIG);
     } else {
         gfx_draw(zombie_portrait[t], 24, y0, WHITE, 0);
-        ui_title_bar(71, y0 + 6, 385, 96, 7, TXT_ES[zombie_txt_name[t]], FONT_BIG);
+        ui_title_bar(71, y0 + 6, 385, 96, 7, TXT[zombie_txt_name[t]], FONT_BIG);
     }
     float py = y0 + 52, ph = SCREEN_H - 14 - py;
     if (plant) ui_panel(24, py, 432, ph, 136, 37, 514);
@@ -518,25 +532,25 @@ static void draw_almanac(void)
 {
     ui_frame_bg();
     if (alm_page == 0) {
-        ui_title_bar(42, 21, 396, 423, 40, TXT_ES[26], FONT_BIG);
+        ui_title_bar(42, 21, 396, 423, 40, TXT[26], FONT_BIG);
         static const short btn[3] = { 247, 125, 139 };
         for (int i = 0; i < 3; i++) {
             float x = 110 + i * 90, y = 112;
             gfx_draw(btn[i], x, y, WHITE, 0);
-            if (i == 2) text_draw_centered(FONT_MED, x + 40, y + 30, TXT_ES[31], 0xFF202020);
+            if (i == 2) text_draw_centered(FONT_MED, x + 40, y + 30, TXT[31], 0xFF202020);
             if (i == alm_cur) ui_cursor(x, y, 80, 84, frame);
         }
-        text_draw_centered(FONT_SMALL, SCREEN_W / 2, 210, TXT_ES[alm_cur == 0 ? 27 : alm_cur == 1 ? 28 : 31], 0xFF103060);
+        text_draw_centered(FONT_SMALL, SCREEN_W / 2, 210, TXT[alm_cur == 0 ? 27 : alm_cur == 1 ? 28 : 31], 0xFF103060);
     } else if (alm_page == 3) {
-        ui_title_bar(42, 15, 396, 423, 40, TXT_ES[31], FONT_BIG);
+        ui_title_bar(42, 15, 396, 423, 40, TXT[31], FONT_BIG);
         ui_panel(24, 58, 432, 200, 136, 37, 514);
         alm_vis = 9;
         gfx_clip(30, 69, 420, 9 * 19);
         ui_text_wrap(FONT_MED, 44, 70 - alm_scroll * 19, 392, 19, alm_text(), 0xFF101010, 1);
         gfx_noclip();
     } else if (!alm_detail) {
-        if (alm_page == 1) ui_title_bar(42, 15, 396, 595, 158, TXT_ES[29], FONT_BIG);
-        else ui_title_bar(42, 15, 396, 96, 7, TXT_ES[30], FONT_BIG);
+        if (alm_page == 1) ui_title_bar(42, 15, 396, 595, 158, TXT[29], FONT_BIG);
+        else ui_title_bar(42, 15, 396, 96, 7, TXT[30], FONT_BIG);
         for (int x = 15; x < 465; x += 23) gfx_draw(506, x, 49, WHITE, 0);
         for (int i = 0; i < alm_n; i++) {
             int t = alm_list[i];
@@ -547,28 +561,40 @@ static void draw_almanac(void)
         }
         if (alm_n) {
             int t = alm_list[alm_cur];
-            text_draw_centered(FONT_SMALL, SCREEN_W / 2, 244, TXT_ES[alm_page == 1 ? plant_txt_name[t] : zombie_txt_name[t]], 0xFF103060);
+            text_draw_centered(FONT_SMALL, SCREEN_W / 2, 244, TXT[alm_page == 1 ? plant_txt_name[t] : zombie_txt_name[t]], 0xFF103060);
         }
     } else draw_card(alm_page == 1, alm_list[alm_cur], alm_scroll, 0);
     gfx_draw(IMG_BACK, 455, 250, WHITE, 0);
 }
 
+/* elegir nivel: marco del almanaque, una fila por zona con su fondo en miniatura y los 10 niveles en
+ * marcos de sobre (614); el cursor son las esquinas del PvZBV */
 static void draw_levels(void)
 {
-    gfx_draw(IMG_TITLE_BG, 0, -24, 0xFF808080, 0);
-    text_draw_centered(FONT_SMALL, SCREEN_W / 2, 10, "ELIGE NIVEL (X JUGAR, O VOLVER)", WHITE);
-    static const char *zn[5] = { "DÍA", "NOCHE", "PISCINA", "PISCINA DE NOCHE", "TEJADO" };
+    static const short bgs[5] = { 147, 572, 8, 110, 45 };
+    ui_frame_bg();
+    ui_title_bar(42, 12, 396, 423, 40, XS(XS_PICK_LEVEL), FONT_BIG);
     for (int w = 0; w < 5; w++) {
-        text_draw(FONT_SMALL, 20, 40 + w * 44, zn[w], 0xFFC0FFC0);
+        float y = 52 + w * 41;
+        gfx_rect(22, y - 1, 62, 33, 0xFF10304A);
+        gfx_draw_ex(bgs[w], 23, y, 0, 0, 60.0f / 610, 31.0f / 320, 0, WHITE, 0);
         for (int i = 0; i < 10; i++) {
             int l = w * 10 + i;
-            float x = 20 + i * 44, y = 58 + w * 44;
-            u32 c = l == sel_level ? 0xFF00FFFF : (l <= max_level ? 0xC0FFFFFF : 0x80A0A0A0);
-            gfx_rect(x, y, 40, 20, l == sel_level ? 0xA0004080 : 0x80000000);
+            float x = 90 + i * 38;
+            int reached = l <= max_level;
+            gfx_rect(x + 2, y + 2, 37, 27, reached ? 0xFF1A3A5A : 0xFF202830);
+            gfx_draw(614, x, y, reached ? WHITE : 0xFF808080, 0);
             char b[8]; snprintf(b, sizeof(b), "%d-%d", w + 1, i + 1);
-            text_draw_centered(FONT_SMALL, x + 20, y + 1, b, c);
+            u32 c = l == max_level ? 0xFF40FFFF : reached ? WHITE : 0xFF909090;
+            text_draw_centered(FONT_SMALL, x + 21, y + 6, b, c);
+            if (l == sel_level) {
+                float cx = x, cy = y, cw = 41, ch = 31;
+                gfx_draw(612, cx - 3, cy - 3, WHITE, 0); gfx_draw(612, cx + cw - 10, cy - 3, WHITE, GFX_FLIPX);
+                gfx_draw(612, cx - 3, cy + ch - 9, WHITE, GFX_FLIPY); gfx_draw(612, cx + cw - 10, cy + ch - 9, WHITE, GFX_FLIPX | GFX_FLIPY);
+            }
         }
     }
+    text_draw_centered(FONT_SMALL, SCREEN_W / 2, 254, XS(XS_X_PLAY_O_BACK), 0xFF103060);
 }
 
 /* dialogo de Dave como el J2ME: el fondo del nivel, Dave abajo a la izquierda y un bocadillo blanco */
@@ -587,21 +613,21 @@ static void draw_dave(void)
         gfx_rect(bx + 14 - k * 0.8f - 1, by + bh - 3 + k, 12 - k + 2, 1, 0xFF000000);
         gfx_rect(bx + 14 - k * 0.8f, by + bh - 3 + k, 12 - k, 1, WHITE);
     }
-    int n = ui_text_wrap(FONT_MED, 0, 0, bw - 20, 18, TXT_ES[dave_line], 0, 0);
+    int n = ui_text_wrap(FONT_MED, 0, 0, bw - 20, 18, TXT[dave_line], 0, 0);
     float ty = by + (bh - n * 18) / 2;
     /* centrado linea a linea */
-    char buf[300]; snprintf(buf, sizeof(buf), "%s", TXT_ES[dave_line]);
+    char buf[300]; snprintf(buf, sizeof(buf), "%s", TXT[dave_line]);
     ui_wrap_center = 1;
     ui_text_wrap(FONT_MED, bx + bw / 2, ty, bw - 20, 18, buf, 0xFF000000, 1);
     ui_wrap_center = 0;
-    if ((frame / 20) & 1) text_draw(FONT_SMALL, 360, 250, "X: SEGUIR", 0xFFFFFFFF);
+    if ((frame / 20) & 1) text_draw(FONT_SMALL, 360, 250, XS(XS_X_NEXT), 0xFFFFFFFF);
 }
 
 /* planta nueva: ficha como la del almanaque con el titulo "¡ENCONTRASTE UNA SEMILLA NUEVA!" */
 static void draw_reward(void)
 {
     ui_frame_bg();
-    text_draw_centered(FONT_MED, SCREEN_W / 2, 8, TXT_ES[51], 0xFF103060);
+    text_draw_centered(FONT_MED, SCREEN_W / 2, 8, TXT[51], 0xFF103060);
     draw_card(1, reward, alm_scroll, 22);
     /* destellos alrededor del sobre */
     for (int k = 0; k < 6; k++) {
@@ -610,7 +636,7 @@ static void draw_reward(void)
         int f = (frame / 6 + k) % 5;
         gfx_draw_region(150, f * 9, 0, 9, 9, x - 4, y - 4, WHITE);
     }
-    if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 252, "X: CONTINUAR", 0xFF103060);
+    if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 252, XS(XS_X_CONTINUE), 0xFF103060);
 }
 
 void game_draw(void)

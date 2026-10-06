@@ -26,7 +26,7 @@ El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
 
 | PSP | Acción |
 |---|---|
-| Cruceta / stick | Mover el cursor por las casillas (arriba/abajo del todo: caja de semillas) |
+| Cruceta / stick | Mover el cursor por las casillas (izquierda en la primera columna: caja de semillas, como el PvZBV) |
 | ✕ | Abrir la caja de semillas / elegir semilla / plantar |
 | ◯ | Cancelar |
 | △ | Pala |
@@ -35,8 +35,12 @@ El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
 
 Los soles se recogen solos al pasar el cursor cerca.
 
-**¡Elige tus plantas!** (cuando tienes más plantas que huecos): cruceta para moverte, ✕ elige o
-quita, ◯ quita la última, △ empieza la partida, START abre la pausa (reanudar, reiniciar, menú, sonido).
+**¡Elige tus plantas!** (cuando tienes más plantas que huecos): cuadrícula de 4 columnas; ✕ elige o
+quita; izquierda desde la primera columna lleva el cursor a las elegidas para quitarlas con ✕;
+△ empieza la partida; START abre la pausa (reanudar, reiniciar, menú, sonido).
+
+**Idiomas**: los 6 del J2ME (inglés, francés, alemán, italiano, portugués y español). Se usa el idioma
+de la consola y se puede cambiar en Opciones.
 
 **Menú**: cruceta y ✕; ◯ va a "salir". En el almanaque, ◀ ▶ pasan de ficha y ▲ ▼ desplazan el texto.
 

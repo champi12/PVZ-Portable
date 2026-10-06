@@ -267,3 +267,29 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
   fichas con panel y desplazamiento que se detiene al final del texto; ficha de "¡ENCONTRASTE UNA
   SEMILLA NUEVA!" y destellos en el sobre ganado; diálogo de Dave con bocadillo sobre el fondo del
   nivel; pantalla de carga de la clase `by` (franja de césped fija y el cortacésped recorriéndola).
+
+### ✅ Sesión 9 — segunda lista de errores y el PvZBV (versión de teclado)
+- El `PvZBV.jar` (4.1.61, 320x240) se tradujo con `jvm2cpp.py` para verlo funcionar (hacía falta
+  `ByteArrayOutputStream`/`DataOutputStream` y tolerar `ch.b()V`, que falta en ese jar modificado).
+  Sus imágenes se extraen con `extract_imgs.py` (37 paquetes). `tools/make_gfx_dir.py` añade a
+  `gfx.pak`: esquinas del cursor (612/613), marco del sobre (614), flechas, candado, sobres 38x28
+  (620+PL_*) y los logos francés/alemán/italiano (651-653).
+- **Cursor del PvZBV**: 4 esquinas de 13x12 que se deslizan a la casilla; rojas donde no se puede
+  plantar; la planta elegida se ve en la casilla. **Caja de semillas** en columna a la izquierda con el
+  marco 41x31 y los sobres pequeños; izquierda en la primera columna entra en la caja.
+- **Idiomas**: `tools/gen_texts.py` genera `texts.h` con las 6 tablas (mismos índices); se elige por el
+  idioma de la consola (`sceUtilityGetSystemParamInt`) o en Opciones; textos propios del port en `XS()`.
+- **Elegir plantas**: 4 columnas; el cursor entra en la columna de las elegidas para quitarlas.
+- **Elegir nivel**: marco del almanaque, miniatura del fondo de cada zona y niveles en marcos de sobre.
+- **Pantalla de carga**: las piezas l3/l4 estaban cambiadas (el extremo de 24 px se usaba de tramo
+  central); ahora se dibuja a 1:1 y la franja es continua.
+- **Tejado como el J2ME**: casillas de 29 px desde x=168 y pendiente de 8.3 px por columna en las 5
+  primeras (medido con el registro de dibujo); zombis, plantas, cursor y limpiatejados la siguen.
+- Plantas en maceta asentadas en la tierra (fila 13 de la imagen de la maceta).
+- **Pértiga**: cada animación de zombi tiene los pies en otro sitio de su caja (la pértiga 20 px a la
+  derecha); ahora se alinean los pies con la posición lógica. No salta la apisonaflor y su "hup" se
+  corta si muere en el salto.
+- Guisantes: salen de dentro de la boca, el tramo recorrido cuenta desde la planta (un zombi pegado
+  recibe el primero) y la repetidora suelta el segundo desde la boca 0,22 s después.
+- Zampalga: hunde al zombi sin moverlo; carnívora: alcanza al que come la planta de delante; el brazo
+  caído rebota y se desliza un poco hacia atrás antes de desaparecer.
