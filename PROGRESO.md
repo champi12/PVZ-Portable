@@ -321,3 +321,18 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
   partículas al plantar, bailarín solo en filas interiores, hongo nuclear de la petaseta, caja sorpresa y
   lector tenían las animaciones cruzadas (5 = caja, 6 = lector), casco del deportista, todos se chamuscan,
   nunca dos abanderados a la vez.
+
+### ✅ Sesión 12 — errores5
+- Lanzaguisantes (y hielaguisantes/repetidora): en la animación del J2ME los frames 0-5 son el disparo (la
+  cabeza se encoge y se estira) y 6-11 el reposo; estaban al revés. El guisante sale al final del estiramiento.
+- Marseta: 8-11 es su reposo con boca y 1-4 dormida. Bailarín (Tencent): 14-22 anda, 23-33 brazos arriba al
+  invocar, uno por oleada y nunca dos a la vez. Deportista: el casco entero es la pista 9 (452), no la 11.
+- Brazo caído en todos los zombis: tabla `arm_track()` con la pista del brazo de delante de cada animación;
+  la pieza que cae es la imagen de esa pista en ese frame.
+- Plantas del Tencent: caja calculada con su frame de reposo (`reanim_fix_bbox`): la planterna y el mazorcañón
+  la tomaban del frame de la semilla. El mazorcañón ocupa dos casillas (mitad derecha `part`).
+- Texturas del Tencent sin reducir a 256 colores (perdían mucha calidad). Sobres nuevos con el coste montado con
+  los dígitos de píxel de los sobres del J2ME/PvZBV. Niebla con una mancha suave generada (1390), sin cuadros.
+- Tejado: las partículas de tierra de las macetas iniciales se quedaban congeladas durante la intro.
+- Zombis de cada nivel según la lista del PC (`orden_zombis_pvz1.txt`): playero, buzo, delfín, cajita, globo,
+  excavador, saltarín, escalerilla, catapulta, zombistein y diablillo en sus niveles (sin zomboni, bobsled ni bungee).

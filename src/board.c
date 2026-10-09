@@ -75,7 +75,7 @@
 #define IMG_WMELON 963       /* melon de hielo (Tencent 263) */
 #define IMG_COB 1195         /* mazorca del mazorcanon (Tencent 495) */
 #define IMG_TARGET 1088      /* diana roja para apuntar el mazorcanon (Tencent 388) */
-#define IMG_FOG 1346         /* nube de niebla (Tencent l66) */
+#define IMG_FOG 1390         /* nube de niebla (mancha suave generada por add_tencent.py) */
 #define IMG_PFLAG 543        /* banderita de la barra de progreso */
 
 /* hojas de particulas del J2ME (clase y): imagen y ancho de cada frame */
@@ -129,6 +129,7 @@ static int level_nwaves(int l) { return is_mini(l) ? (l == LV_MG_LAST ? 50 : 20)
 /* ---------------- entidades ---------------- */
 typedef struct {
     int type, alive, hp, timer, state, shot_at, glow, sleeping, aux, ladder, snd, fire_in;
+    int part;                 /* mitad derecha del mazorcanon (no se dibuja; muere con el) */
     float dx, dy;             /* desplazamiento de dibujo (salto de la apisonaflor) */
     ReAnim anim;
 } Plant;
@@ -390,13 +391,38 @@ static int z_hittable(Zombie *z) { return z->alive && z->state < ZS_DYING && !z-
 /* buzo bajo el agua: solo se le puede dar cuando sale a comer */
 static int z_submerged(Zombie *z) { return z->type == ZT_SNORKEL && z->inwater && z->state != ZS_EAT; }
 
+/* pista del brazo de delante (con la mano) de cada animacion de zombi; -1 si no lo pierde */
+static int arm_track(int re)
+{
+    switch (re) {
+    case RE_ZOMBIE: return 20;
+    case RE_ZOMBIE_POLEVAULT: return 13;  case RE_ZOMBIE_BACKUP: return 12;  case RE_ZOMBIE_FOOTBALL: return 12;
+    case RE_ZOMBIE_JACKBOX: return 8;     case RE_ZOMBIE_NEWSPAPER: return 11; case RE_ZOMBIE_LADDER: return 11;
+    case RE_ZOMBIE_POGO: return 12;       case RE_ZOMBIE_DIGGER: return 15;    case RE_ZOMBIE_BALLOON: return 13;
+    case RE_ZOMBIE_SNORKEL: return 14;    case RE_TC_DANCER: return 13;        case RE_TC_DOLPHIN: return 15;
+    default: return -1;
+    }
+}
+/* origen de dibujo de una animacion con los pies (o la base) en (cx, bottom) */
+static void anim_origin(ReAnim *a, float cx, float bottom, float *ox, float *oy)
+{
+    float *bb = a->def->bbox;
+    /* pies de cada animacion de zombi (medidos en sus frames de andar): la pertiga los tiene 20 px a la
+     * derecha del centro de su caja, por eso parecia que comia desde lejos */
+    static const float zfeet[16] = { 0, 70.6f, 26.1f, 23.4f, 52.4f, 53.3f, 35.2f, 24.9f, 25.4f, 34.7f, 30.2f, 29.0f, 30.4f, 34.6f, -1, 32.6f };
+    int id = reanim_id(a->def);
+    if (id == RE_ZOMBIE) { *ox = cx - ZAX; *oy = bottom - ZAY; }
+    else if (id > 0 && id < 16 && zfeet[id] > 0) { *ox = cx - zfeet[id]; *oy = bottom - bb[3]; }
+    else { *ox = cx - (bb[0] + bb[2]) / 2; *oy = bottom - bb[3]; }
+}
+
 static void z_parts(Zombie *z)
 {
     if (zd(z)->re != RE_ZOMBIE) {
         u32 m = 0;
-        if (z->arm_lost && zd(z)->re == RE_ZOMBIE_POLEVAULT) m |= 1u << 13;   /* brazo de delante (591) */
+        if (z->arm_lost && arm_track(zd(z)->re) >= 0) m |= 1u << arm_track(zd(z)->re);   /* el brazo caido ya no se dibuja */
         if (zd(z)->re == RE_ZOMBIE_FOOTBALL) {         /* casco: pistas 11 (entero), 10, 9 (roto): solo una visible */
-            int st = z->helm * 3 > z->maxhelm * 2 ? 11 : z->helm * 3 > z->maxhelm ? 10 : 9;
+            int st = z->helm * 3 > z->maxhelm * 2 ? 9 : z->helm * 3 > z->maxhelm ? 10 : 11;   /* 9 entero (452), 11 roto (450) */
             m |= 7u << 9;
             if (z->helm > 0) m &= ~(1u << st);
         }
@@ -458,16 +484,19 @@ static void z_eat(Zombie *z)
 /* posicion en el mundo de una pista de la animacion 0 (para soltar brazo, cabeza, cono...) */
 static int z_track_pos(Zombie *z, int track, float *x, float *y, int *img)
 {
-    float hx, hy;
-    if (zd(z)->re != RE_ZOMBIE || !reanim_track_info(&z->anim, track, &hx, &hy, img)) return 0;
-    *x = z->x - ZAX + hx + img_w(*img) / 2.0f;
-    *y = cy_x(z->row, z->x) + G.rh - 2 + z->yoff - ZAY + hy + img_h(*img) / 2.0f;
+    float hx, hy, ox, oy;
+    if (!z->anim.def || track < 0 || !reanim_track_info(&z->anim, track, &hx, &hy, img)) return 0;
+    if (z->dir > 0) return 0;
+    anim_origin(&z->anim, z->x, cy_x(z->row, z->x) + G.rh - 2 + z->yoff + z->dy, &ox, &oy);
+    *x = ox + hx + img_w(*img) / 2.0f;
+    *y = oy + hy + img_h(*img) / 2.0f;
     return 1;
 }
 static void z_drop(Zombie *z, int track, int fallback_img)
 {
     float x, y; int img = fallback_img;
     if (!z_track_pos(z, track, &x, &y, &img)) { x = z->x; y = cell_y(z->row) + G.rh * 0.3f + z->yoff; img = fallback_img; }
+    else if (fallback_img >= 0 && zd(z)->re == RE_ZOMBIE && track == 20) img = 350;
     if (img < 0) return;
     if (z->inwater) { part(PS_SPLASH, x, cell_y(z->row) + G.rh * 0.8f, 0, 0, 0, 30); return; }
     drop_part(img, x, y, cell_y(z->row) + G.rh - 6, frnd(0.2f, 0.7f));
@@ -548,7 +577,7 @@ static void z_damage(Zombie *z, int dmg, int from_front, int snow)
         if (had > 0 && z->helm <= 0) {             /* el cono o el cubo se caen al suelo */
             if (z->type == ZT_CONE) z_drop(z, 23, 33);
             else if (z->type == ZT_BUCKET) z_drop(z, 26, 316);
-            else if (z->type == ZT_FOOTBALL) z_drop(z, -1, 452);
+            else if (z->type == ZT_FOOTBALL) z_drop(z, -1, 450);
         }
         if (!quiet_dmg) sfx_play(z->type == ZT_BUCKET || z->type == ZT_FOOTBALL ? (rand() & 1 ? SFX_SHIELDHIT : SFX_SHIELDHIT2) : SFX_PLASTICHIT);
         if (z->helm < 0) { z->hp += z->helm; z->helm = 0; }
@@ -559,7 +588,7 @@ static void z_damage(Zombie *z, int dmg, int from_front, int snow)
     }
     if (snow && z->type != ZT_BOSS) { if (!z->chill) sfx_play(SFX_FROZEN); z->chill = 1000; }
     if (!z->arm_lost && z->hp * 3 < zd(z)->hp * 2 && z->hp > 0) {
-        z_drop(z, 20, zd(z)->re == RE_ZOMBIE_POLEVAULT ? 591 : 350); z->arm_lost = 1; sfx_play_vol(SFX_LIMBS_POP, 160);
+        if (arm_track(zd(z)->re) >= 0) { z_drop(z, arm_track(zd(z)->re), zd(z)->re == RE_ZOMBIE ? 350 : -1); z->arm_lost = 1; sfx_play_vol(SFX_LIMBS_POP, 160); }
     }
     if (z->type == ZT_GARGANTUAR && !z->summoned && z->hp < zd(z)->hp / 2) {    /* lanza al zombidito */
         z->summoned = 1;
@@ -746,7 +775,7 @@ static void update_zombies(void)
             }
         }
         if (z->type == ZT_DANCER && !z->summoned && z->x < bush_x() - G.cw) {
-            z->summoned = 1; z->state = ZS_SPECIAL; z_anim(z, 14, 22, 0);   /* senala al cielo y salen los bailarines */
+            z->summoned = 1; z->state = ZS_SPECIAL; z_anim(z, 23, 33, 0);   /* levanta los brazos y salen los bailarines */
             int rr[2] = { z->row - 1, z->row + 1 };
             for (int k = 0; k < 2; k++) if (row_ok(rr[k]) && lane[rr[k]] != LN_WATER) spawn_zombie(ZT_BACKUP, rr[k], z->x);
             spawn_zombie(ZT_BACKUP, z->row, z->x + G.cw);
@@ -894,9 +923,9 @@ static void draw_fog(void)
         float a = fog_a[r][c < COLS ? c : COLS - 1] * k;
         if (a < 0.02f) continue;
         float x = cell_x(c) + G.cw / 2 + sinf(frame * 0.01f + r * 1.7f + c) * 4, y = cy_c(r, c < COLS ? c : COLS - 1) + G.rh / 2;
-        u32 col = ((u32)(a * 200) << 24) | 0xE8DCD8;      /* gris azulado de noche */
-        gfx_draw_ex(IMG_FOG, sxw(x), syw(y), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.3f * G.ws, 0.3f * G.ws, 0, col, 0);
-        gfx_draw_ex(IMG_FOG, sxw(x + 6), syw(y - 8), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.26f * G.ws, 0.26f * G.ws, 0, col, GFX_FLIPX);
+        u32 col = ((u32)(a * 150) << 24) | 0xFFFFFF;          /* manchas suaves (1390) que se solapan: sin cuadros */
+        gfx_draw_ex(IMG_FOG, sxw(x), syw(y), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.75f * G.ws, 0.6f * G.ws, 0, col, 0);
+        gfx_draw_ex(IMG_FOG, sxw(x + 8), syw(y - 10), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
     }
 }
 
@@ -991,6 +1020,8 @@ static void fire_pea(Plant *p, int r, int c, int kind)
 
 static void update_plant(Plant *p, int r, int c)
 {
+    if (p->part) { if (c == 0 || !P[r][c - 1][1].alive || P[r][c - 1][1].type != PL_COBCANNON) p->alive = 0; return; }
+    if (p->type == PL_COBCANNON && (c + 1 >= COLS || !P[r][c + 1][1].alive)) { p->alive = 0; return; }
     const PlantDef *d = pdef(p->type);
     float px = cell_x(c) + G.cw / 2;
     if (p->sleeping) return;
@@ -1022,17 +1053,19 @@ static void update_plant(Plant *p, int r, int c)
             if (p->timer > 0) p->timer--;
             int has = z_ahead(r, px, 2000, 0) != NULL;
             int kind = p->type == PL_SNOWPEA ? PJ_SNOW : PJ_PEA;
-            if (has && p->timer <= 0) {
-                p->timer = d->rate; p->fire_in = p->type == PL_GATLING ? 40 : 117; p->state = 1;
-                reanim_play(&p->anim, d->re, d->act_s, d->act_e, 1); p->anim.hide_mask[0] = d->hide;
+            /* la animacion de disparo (0-5 del J2ME: la cabeza se encoge y se estira) va primero y el guisante sale
+             * cuando la cabeza vuelve (frame 4; la guisantralladora en el 22) */
+            if (has && p->timer <= 0 && p->state == 0) {
+                p->timer = d->rate; p->fire_in = 1; p->state = 1;
+                reanim_play(&p->anim, d->re, d->act_s, d->act_e, 0); p->anim.hide_mask[0] = d->hide;
             }
-            if (p->fire_in > 0 && --p->fire_in == 0) {
-                fire_pea(p, r, c, kind);
-                p->aux = p->type == PL_REPEATER ? 1 : p->type == PL_GATLING ? 3 : 0; p->shot_at = p->type == PL_GATLING ? 12 : 22;
+            if (p->state == 1 && p->fire_in && p->anim.frame >= (p->type == PL_GATLING ? 22 : 4)) {
+                p->fire_in = 0; fire_pea(p, r, c, kind);
+                p->aux = p->type == PL_REPEATER ? 1 : p->type == PL_GATLING ? 3 : 0; p->shot_at = p->type == PL_GATLING ? 9 : 22;
             } else if (p->aux > 0 && --p->shot_at <= 0) {
-                fire_pea(p, r, c, kind); p->aux--; p->shot_at = p->type == PL_GATLING ? 12 : 22;
+                fire_pea(p, r, c, kind); p->aux--; p->shot_at = p->type == PL_GATLING ? 9 : 22;
             }
-            if (!has && p->state == 1 && p->fire_in <= 0 && p->aux <= 0 && (int)p->anim.frame >= p->anim.end) { p->state = 0; plant_set_idle(p); }
+            if (p->state == 1 && !p->fire_in && reanim_done(&p->anim)) { p->state = 0; plant_set_idle(p); }
             break;
         }
         if (p->timer > 0) p->timer--;
@@ -1063,7 +1096,8 @@ static void update_plant(Plant *p, int r, int c)
             switch (p->type) {
             case PL_PEASHOOTER: case PL_SNOWPEA: case PL_REPEATER: p->shot_at = 9; break;
             case PL_THREEPEATER: p->shot_at = 5; break;
-            case PL_PUFFSHROOM: case PL_SEASHROOM: case PL_CACTUS: case PL_SCAREDYSHROOM: p->shot_at = 7; break;
+            case PL_SEASHROOM: p->shot_at = 13; break;
+            case PL_PUFFSHROOM: case PL_CACTUS: case PL_SCAREDYSHROOM: p->shot_at = 7; break;
             default: p->shot_at = p->anim.start + (p->anim.end - p->anim.start) / 2;
             }
         }
@@ -1517,7 +1551,8 @@ static void spawn_wave(void)
         int tot = 0, ok[ZT_COUNT];
         for (int t = 0; t < ZT_COUNT; t++) {
             ok[t] = z_minwave[t] <= wave + 1 && pts >= z_cost[t] && zt_in_level(t, lv) && z_weight[t] > 0 && t != ZT_BOSS;
-            if (t == ZT_DANCER && dancers) ok[t] = 0;              /* uno por oleada */
+            if (t == ZT_DANCER && dancers) ok[t] = 0;              /* uno por oleada y nunca dos a la vez */
+            if (t == ZT_DANCER) for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].type == ZT_DANCER && Z[i].state < ZS_DYING) ok[t] = 0;
             if (G.rows <= 5 && (zombie_defs[t].flags & ZF_SWIM)) ok[t] = 0;
             if (lane[0] == LN_ROOF && t == ZT_DIGGER) ok[t] = 0;
             if (ok[t]) tot += z_weight[t];
@@ -1624,6 +1659,7 @@ static int can_plant(int t, int r, int c)
     if (portal_at(r, c) >= 0) return 0;
     const PlantDef *d = &plant_defs[t];
     if (t == PL_GRAVEBUSTER) return grave[r][c] && !P[r][c][1].alive;
+    if (t == PL_COBCANNON && (c + 1 >= COLS || !can_plant(PL_PEASHOOTER, r, c + 1) || !can_plant(PL_PEASHOOTER, r, c))) return 0;
     if (t == PL_PUMPKIN) {                       /* sobre una planta o sola; en agua sobre nenufar, en el tejado sobre maceta */
         if (grave[r][c] || P[r][c][2].alive) return 0;
         if (lane[r] == LN_WATER && !(P[r][c][0].alive && P[r][c][0].type == PL_LILYPAD)) return 0;
@@ -1653,6 +1689,7 @@ static void plant_at(int r, int c, int t)
         return;
     }
     const PlantDef *d = &plant_defs[t];
+    if (t >= PL_J2ME_COUNT) reanim_fix_bbox(reanim_get(d->re), d->idle_s);   /* caja del frame de reposo, no la de la semilla */
     int layer = d->kind == PK_POT ? 0 : t == PL_PUMPKIN ? 2 : 1;
     Plant *p = &P[r][c][layer];
     memset(p, 0, sizeof(*p));
@@ -1663,19 +1700,22 @@ static void plant_at(int r, int c, int t)
     else if (d->kind == PK_INSTANT) { reanim_play(&p->anim, d->re, d->act_s >= 0 ? d->idle_s : 0, d->act_e, 0); p->anim.speed = t == PL_CHERRYBOMB ? 3.0f : 2.0f; }
     else if (t == PL_GRAVEBUSTER) reanim_play(&p->anim, RE_GRAVEBUSTER, 0, 9, 0);
     else if (t == PL_BLOVER) { reanim_play(&p->anim, d->re, d->act_s, d->act_e, 0); sfx_play(SFX_BLOVER); }
-    else if (t == PL_COBCANNON) { plant_set_idle(p); p->timer = d->rate; }
+    else if (t == PL_COBCANNON) {
+        plant_set_idle(p); p->timer = d->rate;
+        if (c + 1 < COLS) { Plant *q = &P[r][c + 1][1]; memset(q, 0, sizeof(*q)); q->alive = 1; q->type = t; q->hp = d->hp; q->part = 1; }   /* ocupa dos casillas */
+    }
     else {
         plant_set_idle(p);
         p->anim.frame += (rand() % 100) / 100.0f * (p->anim.end - p->anim.start);
     }
     if (p->sleeping) {
         static const int sl[][3] = { { PL_PUFFSHROOM, 8, 11 }, { PL_FUMESHROOM, 12, 15 }, { PL_SCAREDYSHROOM, 17, 20 },
-            { PL_DOOMSHROOM, 13, 19 }, { PL_SUNSHROOM, 12, 14 }, { PL_HYPNOSHROOM, 4, 8 }, { PL_SEASHROOM, 8, 11 } };
+            { PL_DOOMSHROOM, 13, 19 }, { PL_SUNSHROOM, 12, 14 }, { PL_HYPNOSHROOM, 4, 8 }, { PL_SEASHROOM, 1, 4 } };
         for (unsigned k = 0; k < sizeof(sl) / sizeof(sl[0]); k++) if (sl[k][0] == t) reanim_play(&p->anim, d->re, sl[k][1], sl[k][2], 1);
     }
     p->anim.hide_mask[0] = d->hide;
     sfx_play(lane[r] == LN_WATER ? SFX_PLANT_WATER : (rand() & 1 ? SFX_PLANT : SFX_PLANT2));
-    {   /* tierra (o agua) que salta al plantar, como el juego original */
+    if (state != ST_INTRO) {   /* tierra (o agua) que salta al plantar, como el juego original (no en las macetas iniciales) */
         float px = cell_x(c) + G.cw / 2, py = cy_c(r, c) + G.rh - 6;
         if (lane[r] == LN_WATER) part(PS_SPLASH, px, cy_c(r, c) + G.rh * 0.75f, 0, 0, 0, 30);
         else {
@@ -1807,7 +1847,7 @@ static void init_refresh(void)
 
 void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
 {
-    lv = level; setup_area();
+    lv = level; setup_area(); state = ST_INTRO;
     memset(P, 0, sizeof(P)); memset(Z, 0, sizeof(Z)); memset(PJ, 0, sizeof(PJ)); memset(S, 0, sizeof(S));
     memset(PT, 0, sizeof(PT)); memset(grave, 0, sizeof(grave)); memset(crater, 0, sizeof(crater));
     reanim_unload_all(); img_unload_all(); sfx_unload_all();
@@ -2151,6 +2191,17 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 900) { plant_at(5, 6, PL_CHERRYBOMB); }
     if (state == ST_PLAY) wave_timer = 9999;
 #endif
+#if defined(AUTOTEST) && defined(AT_ROOFT)
+    if (state == ST_PLAY && state_timer == 20) {
+        static const int pl[] = { PL_GATLING, PL_WINTERMELON, PL_COBCANNON, PL_PLANTERN, PL_PEASHOOTER, PL_PUMPKIN, PL_SNOWPEA };
+        for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
+        plant_at(0, 1, PL_GATLING); plant_at(1, 1, PL_WINTERMELON); plant_at(2, 1, PL_COBCANNON); P[2][1][1].timer = 50;
+        plant_at(3, 2, PL_PLANTERN); plant_at(4, 0, PL_PEASHOOTER); plant_at(3, 0, PL_SNOWPEA); plant_at(4, 3, PL_PUMPKIN);
+        for (int r = 0; r < G.rows; r++) spawn_zombie(ZT_NORMAL, r, cell_x(8) + 10);
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY) wave_timer = 9999;
+#endif
 #if defined(AUTOTEST) && defined(AT_NEW)
     /* plantas y zombis nuevos del Tencent (nivel de niebla con piscina) */
     if (state == ST_PLAY && state_timer == 20) {
@@ -2195,7 +2246,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -2253,15 +2304,8 @@ int board_update(void)
 static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
 {
     if (!a->def) return;
-    float *bb = a->def->bbox;
     float ox, oy;
-    /* pies de cada animacion de zombi (medidos en sus frames de andar): la pertiga los tiene 20 px a la
-     * derecha del centro de su caja, por eso parecia que comia desde lejos */
-    static const float zfeet[16] = { 0, 70.6f, 26.1f, 23.4f, 52.4f, 53.3f, 35.2f, 24.9f, 25.4f, 34.7f, 30.2f, 29.0f, 30.4f, 34.6f, -1, 32.6f };
-    int id = reanim_id(a->def);
-    if (id == RE_ZOMBIE) { ox = cx - ZAX; oy = bottom - ZAY; }
-    else if (id > 0 && id < 16 && zfeet[id] > 0) { ox = cx - zfeet[id]; oy = bottom - bb[3]; }
-    else { ox = cx - (bb[0] + bb[2]) / 2; oy = bottom - bb[3]; }
+    anim_origin(a, cx, bottom, &ox, &oy);
     if (flip) reanim_draw_flip(a, sxw(2 * cx - ox), syw(oy), G.ws, 1, col);   /* mirando a la derecha */
     else reanim_draw(a, sxw(ox), syw(oy), G.ws, col);
 }
@@ -2511,6 +2555,7 @@ void board_draw(void)
                 Plant *p = &P[r][c][l];
                 if (!p->alive) continue;
                 if (l == 2) p->anim.hide_mask[0] = 1u << 1;                /* mitad de delante, encima de la planta */
+                if (p->part) continue;
                 if (lane[r] != LN_WATER && l == 1 && !P[r][c][0].alive)
                     gfx_draw_ex(IMG_SHADOW, sxw(cell_x(c) + G.cw / 2), syw(base), 28, 11, 0.45f * G.ws, 0.45f * G.ws, 0, 0x50FFFFFF, 0);
                 float yo = (l >= 1 && P[r][c][0].alive) ? pot_lift(r, c) : 0;
@@ -2581,6 +2626,7 @@ void board_draw(void)
         if (held >= 0 && !bad) {                 /* la planta elegida se ve en la casilla, como en el PvZBV */
             static ReAnim ghost;
             int t = seed_type(held); const PlantDef *d = pdef(t);
+            if (t >= PL_J2ME_COUNT && t < PL_COUNT) reanim_fix_bbox(reanim_get(d->re), d->idle_s);
             if (ghost.def != reanim_get(d->re)) reanim_play(&ghost, d->re, d->idle_s, d->idle_e, 1);
             ghost.hide_mask[0] = d->hide;
             draw_anim_at(&ghost, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF, 0);

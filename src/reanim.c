@@ -50,6 +50,26 @@ ReDef *reanim_get(int id)
 
 int reanim_id(ReDef *d) { return d ? (int)(d - defs) : -1; }
 
+void reanim_fix_bbox(ReDef *d, int frame)
+{
+    if (!d || d->bbox_frame == frame + 1 || frame < 0 || frame >= d->nframes) return;
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (int t = 0; t < d->ntracks; t++) {
+        ReFrame *F = &d->frames[t * d->nframes + frame];
+        if (!F->vis || F->img < 0) continue;
+        float a = cosf(F->kx) * F->sx, b = -sinf(F->kx) * F->sx, c = sinf(F->ky) * F->sy, e = cosf(F->ky) * F->sy;
+        float W = img_w(F->img), H = img_h(F->img);
+        float us[4] = { 0, W, 0, W }, vs[4] = { 0, 0, H, H };
+        for (int k = 0; k < 4; k++) {
+            float x = F->x + a * us[k] + c * vs[k], y = F->y + b * us[k] + e * vs[k];
+            x0 = fminf(x0, x); x1 = fmaxf(x1, x); y0 = fminf(y0, y); y1 = fmaxf(y1, y);
+        }
+    }
+    if (x1 < x0) return;
+    d->bbox[0] = x0; d->bbox[1] = y0; d->bbox[2] = x1; d->bbox[3] = y1;
+    d->bbox_frame = frame + 1;
+}
+
 void reanim_unload_all(void)
 {
     for (int i = 0; i < RE_COUNT; i++) if (defs[i].block) { free(defs[i].block); defs[i].block = NULL; }

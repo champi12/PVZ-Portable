@@ -35,12 +35,15 @@ typedef struct {
     float bbox[4];          /* caja del primer frame visible (x0,y0,x1,y1) */
     ReFrame *frames;        /* [track * nframes + frame] */
     void *block;
+    int bbox_frame;         /* +1 si la caja se recalculo con reanim_fix_bbox */
 } ReDef;
 
 int   reanim_init(const char *pak);
 ReDef *reanim_get(int id);           /* carga bajo demanda (y sus imagenes) */
 void  reanim_unload_all(void);
-int   reanim_id(ReDef *d);          /* numero de archivo de una definicion cargada (-1 si NULL) */
+int   reanim_id(ReDef *d);
+/* recalcula la caja con el frame dado (plantas cuyo primer frame es la semilla) */
+void  reanim_fix_bbox(ReDef *d, int frame);          /* numero de archivo de una definicion cargada (-1 si NULL) */
 /* rango [start,end] de la pista "de control" (sin imagen) numero n; -1 si no existe */
 int   reanim_range(ReDef *d, int track, int *start, int *end);
 /* rango de reposo: pista de control visible en el frame 0 */
