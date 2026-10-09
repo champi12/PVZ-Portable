@@ -302,3 +302,22 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Cursor: parpadea y se queda en su casilla al elegir un sobre.
 - Tejado: filas alineadas con las tejas del fondo (y0=44, alto 37.6); antes iban media teja por encima y
   las macetas parecían flotar. Los zombis siguen la fila y la pendiente.
+
+### ✅ Sesión 11 — versión Tencent (640x360) y cuarta lista
+- El jar Tencent usa el mismo formato que el 4.6.0 pero con gráficos a 640x360 (x1.33). `tools/add_tencent.py`
+  añade sus 564 imágenes (ids 700+, reescaladas x0.75 al tamaño del J2ME), sus `l*.png` (1280+n), sobres de las
+  plantas nuevas (1360+ y 1380+ a 38x28) y sus 56 animaciones (archivos 52.. de `anim.pak`, posiciones x0.75).
+  `extract_imgs.py` y `parse_reanim.py` aceptan el jar/tabla del Tencent (`parse_reanim.py re out.json tc`).
+- Plantas nuevas: guisantrallador, melonpulta invernal, mazorcañón (X sobre él y X en el blanco), espadaña
+  (pinchos teledirigidos, solo en agua), trébol (globos y niebla), planterna, ajo (cambia de fila) y calabaza
+  (tercera capa de la casilla). Recompensas en 4-1, 4-3, 4-4, 4-7, 5-3, 5-4, 5-5 y 5-6. Niebla en la zona 4.
+- Zombi bailarín y delfín con las animaciones del Tencent.
+- Minijuegos (menú "Minijuegos"): bolos con nueces (y nuez explosiva), combate de portales, última
+  resistencia (5000 soles, SELECT lanza cada asalto), zombis invisibles y zombis veloces. La tragaperras de la
+  Gran Muralla no se incluye.
+- errores4: brazo de la pértiga, panorámica del tejado como el J2ME (cámara 0-130-0), escalera que se apoya y
+  se trepa, pala de verdad en la casilla, disparo del lanzaguisantes como el J2ME (clase `cp`: animación en
+  bucle y guisante 7 ticks después), rodillo de césped en 1-1/1-2/1-4, L/R al siguiente sobre listo,
+  partículas al plantar, bailarín solo en filas interiores, hongo nuclear de la petaseta, caja sorpresa y
+  lector tenían las animaciones cruzadas (5 = caja, 6 = lector), casco del deportista, todos se chamuscan,
+  nunca dos abanderados a la vez.

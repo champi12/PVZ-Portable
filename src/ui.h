@@ -17,7 +17,8 @@ int  ui_logo(void);                 /* logo del menu en el idioma actual */
 /* textos propios del port (no estan en las tablas del J2ME) */
 enum { XS_MUSIC_ON, XS_MUSIC_OFF, XS_PICK_LEVEL, XS_COST, XS_YES_NO, XS_X_PICK, XS_TRIANGLE, XS_PLAY,
        XS_START_PAUSE, XS_PRESS_X, XS_X_CONTINUE, XS_X_NEXT, XS_HELP, XS_ABOUT1, XS_ABOUT2, XS_AREA_DAY,
-       XS_AREA_NIGHT, XS_AREA_POOL, XS_AREA_FOG, XS_AREA_ROOF, XS_NUT, XS_X_REMOVE, XS_X_PLAY_O_BACK, XS_COUNT };
+       XS_AREA_NIGHT, XS_AREA_POOL, XS_AREA_FOG, XS_AREA_ROOF, XS_NUT, XS_X_REMOVE, XS_X_PLAY_O_BACK,
+       XS_MINIGAMES, XS_MG_BOWL, XS_MG_PORTAL, XS_MG_LAST, XS_MG_INVISI, XS_MG_FAST, XS_SELECT_GO, XS_RED_NUT, XS_COUNT };
 const char *XS(int id);
 /* nombre y ficha del almanaque de una planta (las del Tencent no estan en las tablas del J2ME) */
 const char *plant_name(int t);

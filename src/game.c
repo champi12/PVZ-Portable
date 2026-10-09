@@ -39,8 +39,9 @@
 #define FONT_MENU 1          /* fuente 566 de los botones del menu */
 #define IMG_ZHEAD 282
 
-enum { SC_BOOT, SC_TITLE, SC_OPTIONS, SC_ALMANAC, SC_ABOUT, SC_LEVELS, SC_DAVE, SC_BOARD, SC_REWARD };
-enum { MI_ADVENTURE, MI_OPTIONS, MI_ALMANAC, MI_LEVELS, MI_ABOUT, MI_EXIT, MI_COUNT };
+enum { SC_BOOT, SC_TITLE, SC_OPTIONS, SC_ALMANAC, SC_ABOUT, SC_LEVELS, SC_DAVE, SC_BOARD, SC_REWARD, SC_MINI };
+enum { MI_ADVENTURE, MI_MINIGAMES, MI_OPTIONS, MI_ALMANAC, MI_LEVELS, MI_ABOUT, MI_EXIT, MI_COUNT };
+static int mini_sel, mini_done, playing_mini;     /* minijuegos: seleccion, superados (bits), nivel 50.. en juego */
 static int scene, frame, quit, timer, menu_sel, hand_t, confirm;
 static int level, max_level, sel_level, lang_user;   /* lang_user: idioma elegido en opciones (si no, el de la consola) */
 #define opt_sound g_opt_sound
@@ -58,7 +59,7 @@ static void save_game(void)
 {
     SceUID f = sceIoOpen(SAVE_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (f < 0) return;
-    int d[4] = { 0x5A565032, level, max_level, (opt_sound ? 1 : 0) | (opt_music ? 2 : 0) | 4 | (lang_user ? (g_lang + 1) << 8 : 0) };
+    int d[4] = { 0x5A565032, level, max_level, (opt_sound ? 1 : 0) | (opt_music ? 2 : 0) | 4 | (lang_user ? (g_lang + 1) << 8 : 0) | (mini_done << 16) };
     sceIoWrite(f, d, sizeof(d)); sceIoClose(f);
 }
 static void load_game(void)
@@ -71,6 +72,7 @@ static void load_game(void)
         level = d[1]; max_level = d[2];
         if (d[3] & 4) { opt_sound = d[3] & 1; opt_music = (d[3] >> 1) & 1; }
         if ((d[3] >> 8) & 7) { lang_user = 1; ui_set_lang(((d[3] >> 8) & 7) - 1); }
+        mini_done = (d[3] >> 16) & 31;
     }
     if (level < 0 || level > 49) level = 0;
     if (max_level < level) max_level = level;
@@ -95,6 +97,12 @@ static void compute_avail(int lv)
 static void start_board(void)
 {
     scene = SC_BOARD;
+    if (playing_mini) {                           /* minijuegos: todas las plantas */
+        navail = 0;
+        for (int t = 0; t < PL_COUNT; t++) avail[navail++] = t;
+        board_start(playing_mini, avail, navail, level_slots(playing_mini), 1);
+        return;
+    }
     board_start(level, avail, navail, level_slots(level), level > 3);
 }
 
@@ -226,7 +234,12 @@ void game_update(void)
     if (scene == SC_DAVE) reanim_update(&dave, 1.0f / 60.0f);
     if (scene != SC_BOOT) return;
 #else
+#ifdef AT_MINI
+    if (frame == 40) { scene = SC_MINI; mini_sel = AT_MINI; }
+    if (frame == 120) { playing_mini = LV_MG_BOWL + AT_MINI; start_board(); }
+#else
     if (scene == SC_TITLE && frame > 40 && !hand_t) { hand_t = 1; }
+#endif
 #endif
     if (scene == SC_DAVE && frame % 20 == 0) { start_board(); }
 #endif
@@ -258,7 +271,8 @@ void game_update(void)
         if (btn_pressed(PSP_CTRL_CROSS) || btn_pressed(PSP_CTRL_START)) {
             sfx_play(SFX_BUTTONCLICK);
             switch (menu_sel) {
-            case MI_ADVENTURE: hand_t = 1; music_stop(); break;
+            case MI_ADVENTURE: hand_t = 1; music_stop(); playing_mini = 0; break;
+            case MI_MINIGAMES: scene = SC_MINI; img_load(1315); break;
             case MI_OPTIONS: scene = SC_OPTIONS; menu_sel = 0; break;
             case MI_ALMANAC: enter_almanac(); break;
             case MI_LEVELS: scene = SC_LEVELS; sel_level = level; break;
@@ -341,6 +355,12 @@ void game_update(void)
         if (btn_pressed(PSP_CTRL_CIRCLE)) { scene = SC_TITLE; menu_sel = MI_LEVELS; }
         if (btn_pressed(PSP_CTRL_CROSS)) { level = sel_level; prepare_level(); }
         break;
+    case SC_MINI:                          /* minijuegos: fila de 5 */
+        if (btn_repeat(PSP_CTRL_RIGHT) && mini_sel < MG_COUNT - 1) { mini_sel++; sfx_play(SFX_TAP); }
+        if (btn_repeat(PSP_CTRL_LEFT) && mini_sel > 0) { mini_sel--; sfx_play(SFX_TAP); }
+        if (btn_pressed(PSP_CTRL_CIRCLE)) { scene = SC_TITLE; menu_sel = MI_MINIGAMES; sfx_play(SFX_TAP); }
+        if (btn_pressed(PSP_CTRL_CROSS)) { sfx_play(SFX_BUTTONCLICK); playing_mini = LV_MG_BOWL + mini_sel; music_stop(); reanim_unload_all(); img_unload_all(); start_board(); }
+        break;
     case SC_DAVE:
         reanim_update(&dave, 1.0f / 60.0f);
         if (btn_pressed(PSP_CTRL_CROSS)) {
@@ -351,6 +371,13 @@ void game_update(void)
         break;
     case SC_BOARD: {
         int r = board_update();
+        if (playing_mini && r != BR_PLAYING) {   /* minijuego: vuelve a su menu (o se repite) */
+            if (r == BR_RESTART) { start_board(); break; }
+            if (r == BR_WON) { mini_done |= 1 << (playing_mini - LV_MG_BOWL); save_game(); }
+            if (r == BR_LOST) { start_board(); break; }
+            enter_title(); scene = SC_MINI; playing_mini = 0;
+            break;
+        }
         if (r == BR_QUIT) enter_title();
         else if (r == BR_RESTART) start_board();
         else if (r == BR_LOST) prepare_level();
@@ -454,10 +481,11 @@ static void draw_title(void)
     text_draw_centered(FONT_SMALL, 335, 42, buf, 0xFF40FFFF);
     u32 c = menu_sel == MI_ADVENTURE ? ((frame / 10) & 1 ? 0xFF40FFFF : 0xFF00E0FF) : 0xFFE8E8E8;
     text_draw_centered(FONT_MENU, 335, 65, TXT[33], c);
-    draw_slab(IMG_SLAB_A, 241, 96, 0, TXT[23], menu_sel == MI_OPTIONS);
-    draw_slab(IMG_SLAB_B, 241, 137, 0, TXT[82], menu_sel == MI_ALMANAC);
-    draw_slab(IMG_SLAB_A, 241, 177, GFX_FLIPX, XS(XS_PICK_LEVEL), menu_sel == MI_LEVELS);
-    draw_slab(IMG_SLAB_B, 241, 217, GFX_FLIPX, TXT[47], menu_sel == MI_ABOUT);
+    draw_slab(IMG_SLAB_B, 241, 92, 0, XS(XS_MINIGAMES), menu_sel == MI_MINIGAMES);
+    draw_slab(IMG_SLAB_A, 241, 126, 0, TXT[23], menu_sel == MI_OPTIONS);
+    draw_slab(IMG_SLAB_B, 241, 160, GFX_FLIPX, TXT[82], menu_sel == MI_ALMANAC);
+    draw_slab(IMG_SLAB_A, 241, 194, GFX_FLIPX, XS(XS_PICK_LEVEL), menu_sel == MI_LEVELS);
+    draw_slab(IMG_SLAB_B, 241, 228, 0, TXT[47], menu_sel == MI_ABOUT);
     gfx_draw(IMG_EXIT, 457, 297, menu_sel == MI_EXIT ? ((frame / 10) & 1 ? WHITE : 0xFF80FFFF) : 0xFFB0B0B0, 0);
     if (menu_sel == MI_EXIT) text_draw(FONT_SMALL, 452 - text_width(FONT_SMALL, TXT[3]), 298, TXT[3], 0xFF40FFFF);
     if (hand_t) {                          /* mano de zombi (443) saliendo de la tierra */
@@ -640,6 +668,28 @@ static void draw_reward(void)
     if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 252, XS(XS_X_CONTINUE), 0xFF103060);
 }
 
+/* minijuegos: el panel del Tencent (l15) con los iconos l49-l53, el marco l60 y el trofeo de superado (l62) */
+static void draw_mini(void)
+{
+    gfx_draw(1295, 0, 1, WHITE, 0);                /* panel l15 a pantalla completa */
+    text_draw_centered(FONT_BIG, SCREEN_W / 2, 12, XS(XS_MINIGAMES), 0xFF103060);
+    float fw = img_w(1341), iw = img_w(1329), gap = 4, x0 = SCREEN_W / 2 - (MG_COUNT * fw + (MG_COUNT - 1) * gap) / 2;
+    for (int i = 0; i < MG_COUNT; i++) {
+        float fx = x0 + i * (fw + gap), fy = 66, x = fx + (fw - iw) / 2, y = fy + 6;
+        gfx_draw(1341, fx, fy, i == mini_sel ? WHITE : 0xFFB0B0B0, 0);   /* marco l61 */
+        gfx_draw(1329 + i, x, y, WHITE, 0);
+        if (mini_done & (1 << i)) gfx_draw(1342, fx + fw - 30, fy - 8, WHITE, 0);   /* trofeo */
+        ui_wrap_center = 1;
+        ui_text_wrap(FONT_SMALL, fx + fw / 2, fy + img_h(1341) + 4, fw + 2, 15, XS(XS_MG_BOWL + i), i == mini_sel ? 0xFF0050E0 : 0xFF103060, 1);
+        ui_wrap_center = 0;
+        if (i == mini_sel) {
+            gfx_draw(612, fx - 3, fy - 3, WHITE, 0); gfx_draw(612, fx + fw - 10, fy - 3, WHITE, GFX_FLIPX);
+            gfx_draw(612, fx - 3, fy + img_h(1341) - 9, WHITE, GFX_FLIPY); gfx_draw(612, fx + fw - 10, fy + img_h(1341) - 9, WHITE, GFX_FLIPX | GFX_FLIPY);
+        }
+    }
+    text_draw_centered(FONT_SMALL, SCREEN_W / 2, SCREEN_H - 30, XS(XS_X_PLAY_O_BACK), 0xFF103060);
+}
+
 void game_draw(void)
 {
     switch (scene) {
@@ -652,5 +702,6 @@ void game_draw(void)
     case SC_DAVE: draw_dave(); break;
     case SC_BOARD: board_draw(); break;
     case SC_REWARD: draw_reward(); break;
+    case SC_MINI: draw_mini(); break;
     }
 }

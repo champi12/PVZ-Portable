@@ -30,7 +30,9 @@ El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
 | ✕ | Abrir la caja de semillas / elegir semilla / plantar |
 | ◯ | Cancelar |
 | △ | Pala |
-| L / R | Cambiar de sobre |
+| L / R | Siguiente sobre que se puede plantar |
+| ✕ sobre el mazorcañón | Apuntar (luego ✕ en la casilla de destino) |
+| SELECT | Última resistencia: empezar el asalto |
 | START | Pausa |
 
 Los soles se recogen solos al pasar el cursor cerca.
@@ -41,6 +43,9 @@ quita; izquierda desde la primera columna lleva el cursor a las elegidas para qu
 
 **Idiomas**: los 6 del J2ME (inglés, francés, alemán, italiano, portugués y español). Se usa el idioma
 de la consola y se puede cambiar en Opciones.
+
+**Minijuegos** (menú principal): bolos con nueces, combate de portales, última resistencia, zombis
+invisibles y zombis veloces (de la versión Tencent del J2ME).
 
 **Menú**: cruceta y ✕; ◯ va a "salir". En el almanaque, ◀ ▶ pasan de ficha y ▲ ▼ desplazan el texto.
 

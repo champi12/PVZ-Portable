@@ -108,9 +108,23 @@ static Geo G;
 static int lane[RMAX];          /* 0 tierra, 1 cesped, 2 agua, 3 tejado */
 enum { LN_DIRT, LN_GRASS, LN_WATER, LN_ROOF };
 
-int level_area(int lv) { return lv < 10 ? AR_DAY : lv < 20 ? AR_NIGHT : lv < 30 ? AR_POOL : lv < 40 ? AR_FOG : AR_ROOF; }
-int level_is_conveyor(int lv) { return lv == 4 || lv == 9 || lv == 19 || lv == 29 || lv == 39 || lv == 49; }
-int level_slots(int lv) { int s = 6 + (lv >= 19) + (lv >= 29); return s > 8 ? 8 : s; }
+int level_area(int lv)
+{
+    if (lv >= LV_MG_BOWL) { static const char a[MG_COUNT] = { AR_DAY, AR_NIGHT, AR_POOL, AR_NIGHT, AR_DAY }; return a[lv - LV_MG_BOWL]; }
+    return lv < 10 ? AR_DAY : lv < 20 ? AR_NIGHT : lv < 30 ? AR_POOL : lv < 40 ? AR_FOG : AR_ROOF;
+}
+int level_is_conveyor(int lv) { return lv == 4 || lv == 9 || lv == 19 || lv == 29 || lv == 39 || lv == 49 || lv == LV_MG_BOWL || lv == LV_MG_PORTAL; }
+int level_slots(int lv) { if (lv >= LV_MG_BOWL) return 8; int s = 6 + (lv >= 19) + (lv >= 29); return s > 8 ? 8 : s; }
+static int is_mini(int l) { return l >= LV_MG_BOWL; }
+/* zombis de cada minijuego (bits ZT_*) */
+static const unsigned mg_zombies[MG_COUNT] = {
+    (1u<<ZT_NORMAL)|(1u<<ZT_FLAG)|(1u<<ZT_CONE)|(1u<<ZT_BUCKET)|(1u<<ZT_DOOR)|(1u<<ZT_POLE)|(1u<<ZT_NEWSPAPER)|(1u<<ZT_FOOTBALL),
+    (1u<<ZT_NORMAL)|(1u<<ZT_FLAG)|(1u<<ZT_CONE)|(1u<<ZT_BUCKET)|(1u<<ZT_POLE)|(1u<<ZT_FOOTBALL)|(1u<<ZT_NEWSPAPER)|(1u<<ZT_DOOR),
+    (1u<<ZT_NORMAL)|(1u<<ZT_FLAG)|(1u<<ZT_CONE)|(1u<<ZT_BUCKET)|(1u<<ZT_POLE)|(1u<<ZT_DOOR)|(1u<<ZT_FOOTBALL)|(1u<<ZT_DUCKY)|(1u<<ZT_SNORKEL)|(1u<<ZT_DOLPHIN)|(1u<<ZT_BALLOON)|(1u<<ZT_JACK),
+    (1u<<ZT_NORMAL)|(1u<<ZT_FLAG)|(1u<<ZT_CONE)|(1u<<ZT_BUCKET)|(1u<<ZT_POLE)|(1u<<ZT_FOOTBALL)|(1u<<ZT_DOOR)|(1u<<ZT_JACK),
+    (1u<<ZT_NORMAL)|(1u<<ZT_FLAG)|(1u<<ZT_CONE)|(1u<<ZT_BUCKET)|(1u<<ZT_POLE)|(1u<<ZT_NEWSPAPER)|(1u<<ZT_DANCER)|(1u<<ZT_FOOTBALL)|(1u<<ZT_DOOR) };
+static int zt_in_level(int t, int l) { return is_mini(l) ? (mg_zombies[l - LV_MG_BOWL] >> t) & 1 : z_levels[t][l] == '1'; }
+static int level_nwaves(int l) { return is_mini(l) ? (l == LV_MG_LAST ? 50 : 20) : level_waves[l]; }
 
 /* ---------------- entidades ---------------- */
 typedef struct {
@@ -129,6 +143,7 @@ typedef struct {
     float jx0;                /* x al empezar un salto */
     int lcol;                 /* escalador: columna donde apoya la escalera (+1) */
     int garlic;               /* tiempo mordiendo un ajo */
+    int flash;                /* zombis invisibles: se ven un momento al recibir un golpe */
     float dy;                 /* desplazamiento al cambiar de fila (ajo), vuelve a 0 */
     ReAnim anim;
 } Zombie;
@@ -175,6 +190,13 @@ static Zombie PZ[12]; static int npz;   /* zombis de muestra en la calle */
 enum { MODE_LAWN, MODE_BANK, MODE_SHOVEL, MODE_COB };
 static int cob_r, cob_c;                 /* mazorcanon que se esta apuntando */
 static float fog_a[RMAX][COLS]; static int fog_col, fog_blown;   /* niebla (zona 4) */
+/* minijuegos */
+static int ls_setup;                       /* ultima resistencia: preparando la defensa (SELECT empieza) */
+static int portal[4][2], portal_timer;     /* portales: 0<->1 y 2<->3 (fila, columna) */
+#define BOWLING (lv == 4 || lv == LV_MG_BOWL)
+static void mg_portal_reset(void);
+static int portal_at(int r, int c);
+static int portal_jump(int *row, float *x, float dir);
 
 /* ---------------- utilidades ---------------- */
 static int rnd(int a, int b) { return a + rand() % (b - a + 1); }
@@ -210,7 +232,8 @@ static Plant *top_plant(int r, int c) {
     if (P[r][c][0].alive) return &P[r][c][0];
     return NULL;
 }
-static const PlantDef *pdef(int t) { return &plant_defs[t == PL_BOWLNUT ? PL_WALLNUT : t]; }
+static const PlantDef rednut_def = { "NUEZ EXPLOSIVA", 1368, 0, 0, RE_TC_REDNUT, 4000, PK_WALL, 0, 0, 0, 8, -1, -1, 0 };
+static const PlantDef *pdef(int t) { return t == PL_REDNUT ? &rednut_def : &plant_defs[t == PL_BOWLNUT ? PL_WALLNUT : t]; }
 static int seed_type(int i) { return conveyor ? belt[i] : seeds[i]; }
 
 /* ---------------- efectos (particulas del J2ME: hojas de sprites que se reproducen en su vida) ---------------- */
@@ -456,7 +479,7 @@ static Zombie *spawn_zombie(int type, int row, float x)
         Zombie *z = &Z[i]; memset(z, 0, sizeof(*z));
         const ZombieDef *d = &zombie_defs[type];
         z->alive = 1; z->type = type; z->row = row; z->dir = -1;
-        z->x = x; z->speed = d->speed * frnd(0.88f, 1.12f);
+        z->x = x; z->speed = d->speed * frnd(0.88f, 1.12f) * (lv == LV_MG_FAST ? 2.5f : 1);
         z->hp = d->hp; z->helm = z->maxhelm = d->helm; z->shield = z->maxshield = d->shield;
         z->swim = lane[row] == LN_WATER;
         if (type == ZT_BALLOON) z->balloon = 1;
@@ -502,6 +525,7 @@ static int quiet_dmg;
 static void z_damage(Zombie *z, int dmg, int from_front, int snow)
 {
     if (!z->alive || z->state >= ZS_DYING) return;
+    z->flash = 12;
     if (z->type == ZT_BOSS) { dmg = z->angry == 5 ? dmg * 2 : dmg / 2; from_front = 0; snow = 0; }
     if (z->shield > 0 && from_front) {
         z->shield -= dmg;
@@ -646,7 +670,8 @@ static void update_zombies(void)
         if (z->butter > 0) { z->butter--; z->anim.speed = 0; continue; }
         float slow = z->chill > 0 ? 0.5f : 1.0f;
         if (z->chill > 0) z->chill--;
-        z->anim.speed = slow;
+        z->anim.speed = slow * (lv == LV_MG_FAST ? 2.0f : 1);
+        if (z->flash > 0) z->flash--;
         if (z->hypno) { hypno_fight(z); continue; }
         const ZombieDef *d = zd(z);
 
@@ -818,6 +843,7 @@ static void update_zombies(void)
         } else {
             if (z->state != ZS_WALK) { z->state = ZS_WALK; z_walk(z); }
             z->x += z->dir * z->speed * slow;
+            if (lv == LV_MG_PORTAL && portal_jump(&z->row, &z->x, z->dir)) { z->swim = lane[z->row] == LN_WATER; part(PS_PUFF, z->x, cell_y(z->row) + G.rh / 2, 0, 0, 0, 30); }
             if (z->type == ZT_POGO && !z->jumped) z->yoff = -fabsf(sinf(frame * 0.12f)) * 10; else z->yoff = 0;
         }
         if (z->state == ZS_EAT) {                     /* mordiscos sincronizados con la animacion */
@@ -1384,7 +1410,7 @@ static void update_projectiles(void)
             if (q->x < G.x0 - 30) q->alive = 0;
             continue;
         }
-        if (q->kind == PJ_BOWL) {                    /* nuez de bolos */
+        if (q->kind == PJ_BOWL || q->kind == PJ_REDNUT) {                    /* nuez de bolos */
             q->x += KPC(1.6f);
             q->y += q->vy;
             int row = (int)((q->y - G.y0) / G.rh);
@@ -1394,6 +1420,10 @@ static void update_projectiles(void)
             for (int k = 0; k < MAXZ; k++) {
                 Zombie *z = &Z[k];
                 if (z_hittable(z) && z->row == row && fabsf(z->x - q->x) < 12 && q->target != k) {
+                    if (q->kind == PJ_REDNUT) {                 /* nuez explosiva: revienta en 3x3 */
+                        explode(q->x, row, G.cw * 1.5f, 1, 1800, SFX_CHERRYBOMB, 1); boom_fx(q->x, cell_y(row) + G.rh / 2);
+                        q->alive = 0; break;
+                    }
                     z_damage(z, 300, 1, 0); q->target = k; sfx_play(rand() & 1 ? SFX_BOWLINGIMPACT : SFX_BOWLINGIMPACT2);
                     q->vy = (row <= first_row() ? 1 : row >= last_row() ? -1 : (rand() & 1 ? 1 : -1)) * G.rh / 36.0f;
                     break;
@@ -1403,6 +1433,10 @@ static void update_projectiles(void)
             continue;
         }
         q->x += q->vx; q->y += q->vy;
+        if (lv == LV_MG_PORTAL && q->kind != PJ_STAR && q->vx > 0) {      /* los guisantes tambien cruzan los portales */
+            int row = q->row;
+            if (portal_jump(&row, &q->x, 1)) { q->y += (row - q->row) * G.rh; q->row = row; q->x0 = q->x; q->t = 0; }
+        }
         int first = q->t == 0; q->t = 1;
         if (q->kind == PJ_STAR) {
             q->row = (int)((q->y - G.y0) / G.rh);
@@ -1482,7 +1516,7 @@ static void spawn_wave(void)
     while (pts > 0 && guard++ < 50) {
         int tot = 0, ok[ZT_COUNT];
         for (int t = 0; t < ZT_COUNT; t++) {
-            ok[t] = z_minwave[t] <= wave + 1 && pts >= z_cost[t] && z_levels[t][lv] == '1' && z_weight[t] > 0 && t != ZT_BOSS;
+            ok[t] = z_minwave[t] <= wave + 1 && pts >= z_cost[t] && zt_in_level(t, lv) && z_weight[t] > 0 && t != ZT_BOSS;
             if (t == ZT_DANCER && dancers) ok[t] = 0;              /* uno por oleada */
             if (G.rows <= 5 && (zombie_defs[t].flags & ZF_SWIM)) ok[t] = 0;
             if (lane[0] == LN_ROOF && t == ZT_DIGGER) ok[t] = 0;
@@ -1510,6 +1544,13 @@ static void spawn_wave(void)
 
 static void update_waves(void)
 {
+    if (lv == LV_MG_LAST) {                       /* ultima resistencia: 5 asaltos; entre uno y otro se prepara la defensa */
+        if (ls_setup) return;
+        if (wave > 0 && wave < nwaves && is_flag_wave(wave - 1)) {
+            for (int i = 0; i < MAXZ; i++) if (Z[i].alive && !Z[i].hypno) return;
+            ls_setup = 1; sun += 250; sfx_play(SFX_WINMUSIC); return;
+        }
+    }
     if (wave >= nwaves) {
         int any = 0;
         Zombie *last = NULL;
@@ -1517,7 +1558,7 @@ static void update_waves(void)
         (void)last;
         if (!any && state == ST_PLAY) {
             state = ST_WONWAIT; state_timer = 0; music_stop(); sfx_play(SFX_WINMUSIC);
-            reward_type = level_reward[lv]; reward_alive = 1;
+            reward_type = is_mini(lv) ? -1 : level_reward[lv]; reward_alive = 1;
             reward_x = cell_x(5); reward_y = cell_y((first_row() + last_row()) / 2) + G.rh / 2;
         }
         return;
@@ -1539,9 +1580,10 @@ static void update_belt(void)
 {
     if (!conveyor) return;
     if (--belt_timer <= 0 && belt_n < 8) {
-        belt_timer = lv == 4 ? 450 : 700;
+        belt_timer = BOWLING ? 450 : 700;
         int t;
-        if (lv == 4) t = PL_BOWLNUT;
+        if (BOWLING) t = lv == LV_MG_BOWL && rand() % 5 == 0 ? PL_REDNUT : PL_BOWLNUT;
+        else if (lv == LV_MG_PORTAL) { static const int sp[] = { PL_PEASHOOTER, PL_REPEATER, PL_SNOWPEA, PL_WALLNUT, PL_CHERRYBOMB, PL_SQUASH, PL_JALAPENO, PL_POTATOMINE, PL_TALLNUT, PL_GATLING }; t = sp[rnd(0, 9)]; }
         else {
             static const int set9[] = { PL_PEASHOOTER, PL_CHERRYBOMB, PL_WALLNUT, PL_POTATOMINE, PL_SNOWPEA, PL_CHOMPER, PL_REPEATER };
             static const int set19[] = { PL_PUFFSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, PL_HYPNOSHROOM, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_DOOMSHROOM };
@@ -1578,7 +1620,8 @@ static int bank_ready(int i)
 static int can_plant(int t, int r, int c)
 {
     if (!row_ok(r) || c < 0 || c >= COLS || crater[r][c]) return 0;
-    if (t == PL_BOWLNUT) return c <= 2 && !top_plant(r, c);
+    if (t == PL_BOWLNUT || t == PL_REDNUT) return c <= 2 && !top_plant(r, c);
+    if (portal_at(r, c) >= 0) return 0;
     const PlantDef *d = &plant_defs[t];
     if (t == PL_GRAVEBUSTER) return grave[r][c] && !P[r][c][1].alive;
     if (t == PL_PUMPKIN) {                       /* sobre una planta o sola; en agua sobre nenufar, en el tejado sobre maceta */
@@ -1603,8 +1646,8 @@ static int can_plant(int t, int r, int c)
 
 static void plant_at(int r, int c, int t)
 {
-    if (t == PL_BOWLNUT) {
-        Proj *q = new_proj(PJ_BOWL, r, cell_x(c) + G.cw / 2, cell_y(r) + G.rh / 2);
+    if (t == PL_BOWLNUT || t == PL_REDNUT) {
+        Proj *q = new_proj(t == PL_REDNUT ? PJ_REDNUT : PJ_BOWL, r, cell_x(c) + G.cw / 2, cell_y(r) + G.rh / 2);
         if (q) { q->target = -1; q->vy = 0; }
         sfx_play(SFX_BOWLING);
         return;
@@ -1656,6 +1699,38 @@ static __attribute__((unused)) void auto_place(int t)
     for (int c = 0; c < COLS; c++) for (int r = first_row(); r <= last_row(); r++) if (can_plant(t, r, c)) { cur_r = r; cur_c = c; return; }
 }
 
+/* ---------------- portales (combate de portales): lo que entra por uno sale por su pareja ---------------- */
+static int portal_at(int r, int c)
+{
+    if (lv != LV_MG_PORTAL) return -1;
+    for (int k = 0; k < 4; k++) if (portal[k][0] == r && portal[k][1] == c) return k;
+    return -1;
+}
+static void mg_portal_reset(void)
+{
+    if (lv != LV_MG_PORTAL) return;
+    for (int k = 0; k < 4; k++) {
+        int r, c, tries = 0;
+        do { r = rnd(0, G.rows - 1); c = rnd(2, 8); tries++; }
+        while (tries < 50 && (portal_at(r, c) >= 0 || (k & 1 && portal[k - 1][0] == r) || top_plant(r, c)));
+        portal[k][0] = -1; portal[k][0] = r; portal[k][1] = c;
+    }
+    sfx_play(SFX_PORTAL);
+}
+/* zombi o proyectil que llega al centro de un portal de su fila: sale por el otro */
+static int portal_jump(int *row, float *x, float dir)
+{
+    int c = col_of(*x);
+    if (c < 0 || c >= COLS) return 0;
+    int k = portal_at(*row, c);
+    if (k < 0) return 0;
+    float cx = cell_x(c) + G.cw / 2;
+    if (fabsf(*x - cx) > 1.5f) return 0;
+    int o = k ^ 1;
+    *row = portal[o][0]; *x = cell_x(portal[o][1]) + G.cw / 2 + dir * 3;
+    return 1;
+}
+
 /* ---------------- arranque ---------------- */
 static void setup_area(void)
 {
@@ -1676,7 +1751,7 @@ static void setup_area(void)
         G.bg = IMG_BG_ROOF; G.y0 = 44; G.rh = 37.6f; G.x0 = 168; G.cw = 29; G.roof = 1;   /* filas y columnas sobre las tejas del fondo 45 */ G.music = "data/music/roof_grazetheroof.mp3";
         for (int r = 0; r < 5; r++) lane[r] = LN_ROOF;
     }
-    if (lv == 4) G.music = "data/music/minigame_loonboon.mp3";
+    if (lv == 4 || is_mini(lv)) G.music = lv == LV_MG_LAST ? "data/music/puzzle_cerebrawl.mp3" : "data/music/minigame_loonboon.mp3";
     else if (lv == 49) G.music = "data/music/boss_brainiacmaniac.mp3";
     else if (level_is_conveyor(lv)) G.music = "data/music/conveyer.mp3";
     G.ws = 1.0f;                                   /* sin zoom (como el juego original) */
@@ -1705,7 +1780,7 @@ static void setup_preview(void)
     static const short pos[9][2] = { {546,146},{507,146},{528,152},{508,208},{546,208},{582,239},{526,245},{580,270},{523,276} };
     int types[ZT_COUNT], nt = 0;
     for (int t = 0; t < ZT_COUNT; t++) {
-        if (t == ZT_BOSS || t == ZT_BACKUP || t == ZT_IMP || z_levels[t][lv] != '1') continue;
+        if (t == ZT_BOSS || t == ZT_BACKUP || t == ZT_IMP || !zt_in_level(t, lv)) continue;
         if (zombie_defs[t].flags & ZF_SWIM) continue;
         types[nt++] = t;
     }
@@ -1747,13 +1822,13 @@ void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
     if (!conveyor && !choosing) for (int i = 0; i < ch_n; i++) seeds[nseeds++] = ch_list[i];
     for (int i = 0; i < nseeds; i++) reanim_get(plant_defs[seeds[i]].re);
     if (choosing) for (int i = 0; i < ch_n; i++) img_load(plant_defs[ch_list[i]].packet);
-    if (lv == 4) reanim_get(RE_WALLNUT);
+    if (BOWLING) { reanim_get(RE_WALLNUT); if (lv == LV_MG_BOWL) reanim_get(RE_TC_REDNUT); }
     reanim_get(RE_ZOMBIE); reanim_get(RE_ZOMBIE_CHARRED);
-    for (int t = 0; t < ZT_COUNT; t++) if (z_levels[t][lv] == '1') reanim_get(zombie_defs[t].re);
+    for (int t = 0; t < ZT_COUNT; t++) if (zt_in_level(t, lv)) reanim_get(zombie_defs[t].re);
     shovel_ok = has_shovel;
     for (int r = 0; r < G.rows; r++) { M[r].state = row_ok(r) ? 0 : 2; M[r].x = G.x0 - 56; }
     /* tumbas (cs.a del J2ME) */
-    if (G.bg == IMG_BG_NIGHT) {
+    if (G.bg == IMG_BG_NIGHT && !is_mini(lv)) {
         static const signed char gtab[][6] = { { 0,0,0,1,1,2 }, { 0,0,1,1,2,3 }, { 0,1,2,2,3,3 }, { 1,2,2,2,3,3 } };
         int set = (lv <= 12) ? 0 : (lv == 13 || lv == 15 || lv == 17) ? 1 : (lv == 16 || lv == 18) ? 2 : lv >= 19 ? 3 : 1;
         for (int c = 3; c < 9; c++) for (int k = 0; k < gtab[set][c - 3]; k++) {
@@ -1766,12 +1841,14 @@ void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
         for (int r = 0; r < G.rows; r++) for (int c = 0; c < 4; c++) plant_at(r, c, PL_FLOWERPOT);   /* 4 columnas, como el J2ME */
         sfx_stop_all();
     }
-    sun = conveyor ? 0 : (lv == 0 ? 150 : 50);
+    sun = conveyor ? 0 : lv == LV_MG_LAST ? 5000 : (lv == 0 ? 150 : 50);
+    if (lv == LV_MG_LAST) G.sky_sun = 0;
+    ls_setup = lv == LV_MG_LAST; mg_portal_reset(); portal_timer = 3000;
     suns_fallen = 0; sky_timer = 425;
     init_refresh();
     mode = MODE_LAWN; held = -1; bank_sel = 0;
     cur_r = (first_row() + last_row()) / 2; cur_c = 0;
-    nwaves = level_waves[lv]; wave = 0; wave_timer = 1800; huge_timer = 0; msg_timer = 0;
+    nwaves = level_nwaves(lv); wave = 0; wave_timer = 1800; huge_timer = 0; msg_timer = 0;
     state = ST_INTRO; state_timer = 0; paused = 0; result = BR_PLAYING; reward_alive = 0; reward_type = -1;
     intro_phase = IP_WAIT; intro_t = 0; hud_off = -60; G.camx = CAM0;
     fog_col = level_area(lv) == AR_FOG ? (lv < 35 ? 5 : 4) : 99; fog_blown = 0;
@@ -1931,6 +2008,7 @@ static void board_input(void)
         return;
     }
     if (state != ST_PLAY && state != ST_WONWAIT) return;
+    if (ls_setup && btn_pressed(PSP_CTRL_SELECT)) { ls_setup = 0; wave_timer = wave ? 100 : 600; sfx_play(SFX_SIREN); }
     int up = btn_repeat(PSP_CTRL_UP) || (stick_y() < -0.6f && frame % 9 == 0);
     int dn = btn_repeat(PSP_CTRL_DOWN) || (stick_y() > 0.6f && frame % 9 == 0);
     int lf = btn_repeat(PSP_CTRL_LEFT) || (stick_x() < -0.6f && frame % 9 == 0);
@@ -2131,6 +2209,7 @@ int board_update(void)
         }
         cur_r = rnd(first_row(), last_row()); cur_c = rnd(0, 8);
     }
+    if (ls_setup && state == ST_PLAY && frame % 300 == 0) { ls_setup = 0; wave_timer = 100; }
     if (frame % 600 == 0) { int nz = 0; for (int i = 0; i < MAXZ; i++) nz += Z[i].alive; printf("lv%d f%d st%d wave%d/%d z%d sun%d\n", lv, frame, state, wave, nwaves, nz, sun); }
     if (state == ST_WONWAIT && reward_alive && state_timer > 60) { reward_alive = 0; result = BR_WON; }
 #endif
@@ -2153,6 +2232,7 @@ int board_update(void)
         for (int i = 0; i < nseeds; i++) if (refresh[i] > 0) refresh[i]--;
         update_belt();
         update_suns();
+        if (lv == LV_MG_PORTAL && state == ST_PLAY && --portal_timer <= 0) { portal_timer = 3000; mg_portal_reset(); }
         for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) {
             if (crater[r][c] > 0) crater[r][c]--;
             for (int l = 0; l < 3; l++) if (P[r][c][l].alive) update_plant(&P[r][c][l], r, c);
@@ -2200,7 +2280,8 @@ static void draw_progress(void)
         gfx_draw(IMG_PFLAG, fx - 2, by - 12 + (w < wave ? -3 : 0), WHITE, 0);
     }
     gfx_draw(IMG_ZHEAD, bx + bw * (1 - prog) - 8, by - 6, WHITE, 0);
-    snprintf(buf, sizeof(buf), "%s %d-%d", TXT[74], lv / 10 + 1, lv % 10 + 1);
+    if (is_mini(lv)) snprintf(buf, sizeof(buf), "%s", XS(XS_MG_BOWL + lv - LV_MG_BOWL));
+    else snprintf(buf, sizeof(buf), "%s %d-%d", TXT[74], lv / 10 + 1, lv % 10 + 1);
     text_draw(FONT_SMALL, bx - 4 - text_width(FONT_SMALL, buf), SCREEN_H - 20, buf, 0xFFFFFFFF);
 }
 
@@ -2345,6 +2426,8 @@ static void draw_zombie(Zombie *z, float base)
     if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? 0.55f : 0.22f);     /* nadando: la animacion ya esconde las piernas */
     if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
     else if (z->state < ZS_DYING && !z->under && !(z->inwater && z->type == ZT_DOLPHIN)) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
+    if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped) gfx_noclip(); return; }   /* invisibles: solo su sombra */
+    if (lv == LV_MG_INVISI && z->state < ZS_DYING && state == ST_PLAY) col = (col & 0x00FFFFFF) | 0x90000000;
     draw_anim_at(&z->anim, z->x, base + 1 + yo, col, z->dir > 0);
     if (z->butter > 0 && z->state < ZS_DYING) {            /* mantequilla en la cabeza */
         float hx, hy; int img;
@@ -2403,7 +2486,7 @@ void board_draw(void)
 {
     draw_world(G.bg, 0, 0, WHITE);
     draw_sod();
-    if (lv == 4) gfx_rect(sxw(cell_x(3)) - 1, syw(G.y0), 2, G.rows * G.rh * G.ws, 0xC02020FF);   /* linea roja de bolos */
+    if (BOWLING) gfx_rect(sxw(cell_x(3)) - 1, syw(G.y0), 2, G.rows * G.rh * G.ws, 0xC02020FF);   /* linea roja de bolos */
     for (int r = 0; r < G.rows; r++) {
         float base0 = cell_y(r) + G.rh - 3;
         if ((M[r].state < 2 || M[r].state == 3) && (state != ST_INTRO || intro_phase >= IP_MOW)) {
@@ -2436,20 +2519,28 @@ void board_draw(void)
                 if (p->ladder) draw_world_c(IMG_LADDER, cell_x(c) + G.cw * 0.85f, base + yo - img_h(IMG_LADDER) / 2.0f + 1, 1, WHITE);   /* apoyada delante */
             }
         }
+        if (lv == LV_MG_PORTAL && state != ST_INTRO) for (int k = 0; k < 4; k++) if (portal[k][0] == r) {   /* portales (Tencent l37-l39) */
+            float px = cell_x(portal[k][1]) + G.cw / 2, py = cy_c(r, portal[k][1]) + G.rh / 2 - 6, pu = 1 + 0.06f * sinf(frame * 0.1f + k);
+            u32 col = k < 2 ? 0xF0FFE0A0 : 0xF060C0FF;   /* pareja azul y pareja naranja */
+            gfx_draw_ex(1319, sxw(px), syw(py), img_w(1319) / 2.0f, img_h(1319) / 2.0f, 0.9f * pu * G.ws, 0.9f * G.ws, 0, col, 0);
+            gfx_draw_ex(1318, sxw(px), syw(py), img_w(1318) / 2.0f, img_h(1318) / 2.0f, 0.9f * G.ws, 0.9f * pu * G.ws, 0, 0xC0FFFFFF, 0);
+        }
         for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].row == r && Z[i].x < view_right() + 40) draw_zombie(&Z[i], cy_x(r, Z[i].x) + G.rh - 3);
         (void)base0;
         for (int i = 0; i < MAXP; i++) {
             Proj *q = &PJ[i];
             if (!q->alive || q->row != r) continue;
-            if (q->kind == PJ_BOWL) {
-                static ReAnim nut;
+            if (q->kind == PJ_BOWL || q->kind == PJ_REDNUT) {
+                static ReAnim nut, red;
                 if (!nut.def) reanim_play(&nut, RE_WALLNUT, 0, 0, 1);
-                float *bb = nut.def ? nut.def->bbox : NULL;
+                if (q->kind == PJ_REDNUT && !red.def) reanim_play(&red, RE_TC_REDNUT, 0, 0, 1);
+                ReAnim *na = q->kind == PJ_REDNUT ? &red : &nut;
+                float *bb = na->def ? na->def->bbox : NULL;
                 if (bb) {
                     float a = q->x * 0.15f, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
                     float ca = cosf(a) * G.ws, sa = sinf(a) * G.ws;
-                    /* nuez rodando: la animacion 28 frame 0 rotada alrededor de su centro */
-                    ReFrame *F = &nut.def->frames[4 * nut.def->nframes];
+                    /* nuez rodando: frame 0 de su animacion rotado alrededor de su centro */
+                    ReFrame *F = &na->def->frames[(q->kind == PJ_REDNUT ? 6 : 4) * na->def->nframes];
                     float ox = F->x - cx, oy = F->y - cy;
                     gfx_draw_affine(F->img, sxw(q->x) + ox * ca - oy * sa, syw(q->y) + ox * sa + oy * ca, ca, sa, -sa, ca, WHITE);
                 }
@@ -2521,6 +2612,7 @@ void board_draw(void)
         cursor_to(2, by, 41, 31, IMG_CUR_OK);
         char buf[64]; int t = seed_type(bank_sel);
         if (t == PL_BOWLNUT) snprintf(buf, sizeof(buf), "%s", XS(XS_NUT));
+        else if (t == PL_REDNUT) snprintf(buf, sizeof(buf), "%s", XS(XS_RED_NUT));
         else if (conveyor) snprintf(buf, sizeof(buf), "%s", plant_name(t));
         else snprintf(buf, sizeof(buf), "%s  (%d)", plant_name(t), plant_defs[t].cost);
         int tw = text_width(FONT_SMALL, buf);
@@ -2531,6 +2623,11 @@ void board_draw(void)
     if (state == ST_INTRO && intro_phase == IP_READY) {
         const char *t = intro_t < 55 ? TXT_READY : (intro_t < 110 ? TXT_SET : TXT_PLANT);
         text_draw_centered(FONT_BIG, SCREEN_W / 2, 120, t, 0xFF2020FF);
+    }
+    if (ls_setup && state == ST_PLAY && (frame / 30) & 1) {
+        const char *t = XS(XS_SELECT_GO); int tw = text_width(FONT_SMALL, t);
+        gfx_rect(SCREEN_W / 2 - tw / 2 - 6, 226, tw + 12, 20, 0xA0000000);
+        text_draw_centered(FONT_SMALL, SCREEN_W / 2, 228, t, 0xFF40FFFF);
     }
     if (msg_timer > 0) {
         if (msg_kind == 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 125, TXT_HUGE, 0xFF2020FF);
