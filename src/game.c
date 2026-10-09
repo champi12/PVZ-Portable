@@ -147,7 +147,8 @@ static void almanac_build(void)
             PL_PEASHOOTER, PL_SUNFLOWER, PL_CHERRYBOMB, PL_WALLNUT, PL_POTATOMINE, PL_SNOWPEA, PL_CHOMPER, PL_REPEATER,
             PL_PUFFSHROOM, PL_SUNSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, PL_HYPNOSHROOM, PL_SCAREDYSHROOM, PL_ICESHROOM,
             PL_DOOMSHROOM, PL_LILYPAD, PL_SQUASH, PL_THREEPEATER, PL_TANGLEKELP, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD,
-            PL_TALLNUT, PL_SEASHROOM, PL_CACTUS, PL_STARFRUIT, PL_CABBAGEPULT, PL_FLOWERPOT, PL_KERNELPULT, PL_MELONPULT };
+            PL_TALLNUT, PL_SEASHROOM, PL_PLANTERN, PL_CACTUS, PL_BLOVER, PL_STARFRUIT, PL_PUMPKIN, PL_CABBAGEPULT, PL_FLOWERPOT,
+            PL_KERNELPULT, PL_GARLIC, PL_MELONPULT, PL_GATLING, PL_WINTERMELON, PL_CATTAIL, PL_COBCANNON };
         for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < navail; i++) if (avail[i] == order[k]) alm_list[alm_n++] = order[k];
     } else {
         static const signed char zorder[] = { ZT_NORMAL, ZT_FLAG, ZT_CONE, ZT_POLE, ZT_BUCKET, ZT_NEWSPAPER, ZT_DOOR, ZT_FOOTBALL,
@@ -171,7 +172,7 @@ static const char *alm_text(void)
 {
     if (alm_page == 3) return XS(XS_HELP);
     int t = alm_list[alm_cur];
-    return TXT[alm_page == 1 ? plant_txt_desc[t] : zombie_txt_desc[t]];
+    return (alm_page == 1 ? plant_desc(t) : TXT[zombie_txt_desc[t]]);
 }
 static void almanac_open_detail(void)
 {
@@ -511,7 +512,7 @@ static void draw_card(int plant, int t, int scroll, int top_extra)
     if (plant) {
         gfx_draw(392, 24, y0, WHITE, 0);
         gfx_draw(plant_defs[t].packet, 31, y0 + 8, WHITE, 0);
-        ui_title_bar(87, y0 + 8, 369, 595, 158, TXT[plant_txt_name[t]], FONT_BIG);
+        ui_title_bar(87, y0 + 8, 369, 595, 158, plant_name(t), FONT_BIG);
     } else {
         gfx_draw(zombie_portrait[t], 24, y0, WHITE, 0);
         ui_title_bar(71, y0 + 6, 385, 96, 7, TXT[zombie_txt_name[t]], FONT_BIG);
@@ -561,7 +562,7 @@ static void draw_almanac(void)
         }
         if (alm_n) {
             int t = alm_list[alm_cur];
-            text_draw_centered(FONT_SMALL, SCREEN_W / 2, 244, TXT[alm_page == 1 ? plant_txt_name[t] : zombie_txt_name[t]], 0xFF103060);
+            text_draw_centered(FONT_SMALL, SCREEN_W / 2, 244, (alm_page == 1 ? plant_name(t) : TXT[zombie_txt_name[t]]), 0xFF103060);
         }
     } else draw_card(alm_page == 1, alm_list[alm_cur], alm_scroll, 0);
     gfx_draw(IMG_BACK, 455, 250, WHITE, 0);

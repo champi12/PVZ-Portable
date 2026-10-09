@@ -1,8 +1,12 @@
-# Extrae las 605 imagenes del paquete i0..i45 del PvZ J2ME
-import io, json, os, struct, zlib
+# Extrae las imagenes del paquete i0..iN del PvZ J2ME
+# uso: extract_imgs.py [jar_dir npaquetes salida]   (por defecto jar/ 46 imgs: las 605 del 4.6.0; Tencent: 51)
+import io, json, os, struct, sys, zlib
+JAR = sys.argv[1] if len(sys.argv) > 1 else 'jar'
+NP = int(sys.argv[2]) if len(sys.argv) > 2 else 46
+OUT = sys.argv[3] if len(sys.argv) > 3 else 'imgs'
 from PIL import Image
-blob=b''.join(open(f'jar/i{i}','rb').read() for i in range(46))
-pal=open('jar/p','rb').read()
+blob=b''.join(open(f'{JAR}/i{i}','rb').read() for i in range(NP))
+pal=open(f'{JAR}/p','rb').read()
 pos=0
 def rd(n):
     global pos; v=blob[pos:pos+n]; pos+=n; return v
@@ -68,15 +72,15 @@ def flags_fx(img, fl):
         return im
     return img
 
-os.makedirs('imgs',exist_ok=True)
+os.makedirs(OUT,exist_ok=True)
 meta=[]; c=0; g=0
 def save(idx, im, fl, n8, n9, grp, derived):
     im2=apply_pal(im,n8)
     im2=flags_fx(im2,fl & ~3)
-    im2.convert('RGBA').save(f'imgs/{idx:03d}.png')
+    im2.convert('RGBA').save(f'{OUT}/{idx:03d}.png')
     meta.append(dict(id=idx,w=im2.width,h=im2.height,flip=fl&3,flags=fl,pal=n8,x=n9,group=grp,derived=derived))
 
-while c<605:
+while pos<len(blob):
     rd(8); L=u(4); data=rd(L)
     base=Image.open(io.BytesIO(data)); base.load()
     n=u(2)
@@ -103,5 +107,5 @@ while c<605:
             rd(8); fl=u(1); n8=u(2); n9=u(1)
             save(c, im, fl, -1 if n8==65535 else n8, n9, g, ops); c+=1
     g+=1
-json.dump(meta,open('imgs/meta.json','w'),indent=0)
+json.dump(meta,open(f'{OUT}/meta.json','w'),indent=0)
 print('groups',g,'images',c,'end',pos,len(blob))

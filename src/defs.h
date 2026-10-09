@@ -12,13 +12,18 @@ enum {
     PL_SCAREDYSHROOM, PL_ICESHROOM, PL_DOOMSHROOM, PL_LILYPAD, PL_SQUASH, PL_THREEPEATER,
     PL_TANGLEKELP, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT, PL_SEASHROOM, PL_CACTUS,
     PL_STARFRUIT, PL_CABBAGEPULT, PL_FLOWERPOT, PL_KERNELPULT, PL_MELONPULT,
+    /* plantas de la version Tencent */
+    PL_GATLING, PL_WINTERMELON, PL_COBCANNON, PL_CATTAIL, PL_BLOVER, PL_PLANTERN, PL_GARLIC, PL_PUMPKIN,
     PL_COUNT,
-    PL_BOWLNUT = 100      /* nuez de bolos (nivel 1-5) */
+    PL_J2ME_COUNT = PL_GATLING,
+    PL_BOWLNUT = 100,     /* nuez de bolos (nivel 1-5) */
+    PL_REDNUT = 101       /* nuez explosiva (minijuego de bolos) */
 };
 
 /* comportamiento */
 enum { PK_SHOOTER, PK_SUN, PK_INSTANT, PK_MINE, PK_WALL, PK_CHOMPER, PK_LOBBER, PK_STAR, PK_FUME,
-       PK_PASSIVE, PK_SQUASH, PK_KELP, PK_SPIKE, PK_GRAVEBUSTER, PK_HYPNO, PK_POT, PK_TORCH };
+       PK_PASSIVE, PK_SQUASH, PK_KELP, PK_SPIKE, PK_GRAVEBUSTER, PK_HYPNO, PK_POT, PK_TORCH,
+       PK_COB, PK_CATTAIL, PK_BLOVER, PK_LIGHT, PK_GARLIC, PK_PUMPKIN };
 /* flags */
 #define PF_MUSHROOM 1   /* duerme de dia */
 #define PF_AQUATIC  2   /* solo en agua */
@@ -68,12 +73,23 @@ static const PlantDef plant_defs[PL_COUNT] = {
  { "MACETA",           362,  25,  750, RE_FLOWERPOT,      300, PK_POT,     PF_FLAT,                 0,               0, 2,  -1,-1,   0 },
  { "LANZAMAÍZ",        114, 100,  750, RE_KERNELPULT,     300, PK_LOBBER,  0,                       0,               0, 2,   3, 9,   300 },
  { "MELONPULTA",       219, 300,  750, RE_MELONPULT,      300, PK_LOBBER,  0,                       0,               0, 3,   4, 8,   300 },
+ /* Tencent (sobres 1360+, animaciones RE_TC_*; costes del Tencent, no hace falta la planta base) */
+ { "GUISANTRALLADORA",1360, 350, 5000, RE_TC_GATLING,     300, PK_SHOOTER, 0,                       0,               6, 14, 15, 27,  150 },
+ { "MELONPULTA INVERNAL",1361,350,5000,RE_TC_WINTERMELON, 300, PK_LOBBER,  0,                       0,               0, 3,   4, 8,   300 },
+ { "MAZORCAÑÓN",      1362, 500, 5000, RE_TC_COBCANNON,   300, PK_COB,     0,                       0,               5, 9,  17, 29,  3500 },
+ { "ESPADAÑA",        1363, 225, 5000, RE_TC_CATTAIL,     300, PK_CATTAIL, PF_AQUATIC,              0,               5, 11, 12, 20,  150 },
+ { "TRÉBOL",          1364, 100,  750, RE_TC_BLOVER,      300, PK_BLOVER,  0,                       0,               0, 16, 17, 31,  0 },
+ { "PLANTERNA",       1365,  25, 3000, RE_TC_PLANTERN,    300, PK_LIGHT,   0,                       0,               5, 15, -1,-1,   0 },
+ { "AJO",             1366,  50,  750, RE_TC_GARLIC,      400, PK_GARLIC,  0,                       0,               4, 13, -1,-1,   0 },
+ { "CALABAZA",        1367, 125, 3000, RE_TC_PUMPKIN,    4000, PK_PUMPKIN, 0,                       0,               0, 8,  -1,-1,   0 },
 };
+/* sobre pequeno 38x28 de la barra (PvZBV 620+t; Tencent 1380+) */
+static inline int plant_smallpack(int t) { return t >= PL_J2ME_COUNT ? 1380 + t - PL_J2ME_COUNT : 620 + t; }
 
-/* textos del almanaque (indices en TXT_ES) */
-static const unsigned char plant_txt_name[PL_COUNT] __attribute__((unused)) = {
+/* textos del almanaque (indices en TXT_ES; las plantas del Tencent usan plant_name()/plant_desc() de ui.c) */
+static const unsigned char plant_txt_name[PL_J2ME_COUNT] __attribute__((unused)) = {
     154,153,156,155,157,159,160,158,172,173,174,175,178,176,177,179,180,162,161,182,163,164,165,166,181,171,170,167,184,168,169 };
-static const unsigned char plant_txt_desc[PL_COUNT] __attribute__((unused)) = {
+static const unsigned char plant_txt_desc[PL_J2ME_COUNT] __attribute__((unused)) = {
     185,186,188,187,189,191,192,190,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215 };
 
 /* ---------------- zombis (orden del J2ME, clase cj) ---------------- */
@@ -148,7 +164,7 @@ typedef struct {
 /* animacion 0: pistas 11-13 bandera, 16-17 flotador, 21-23 cono, 24-26 cubo, 27-29 puerta.
  * Rangos medidos en los archivos re del J2ME: 0 normal (0-7 reposo, 8-19 andar, 20-29 comer, 30-39 morir,
  * 40-49 nadar, 50-55 hundirse), 1 pertiga (13-23 salto, 24-34 andar sin pertiga), 5 lector (26-33 pierde el
- * periodico), 11 saltarin (39-41 con el palo), 12 minero (32-36 bajo tierra, 37-41 sale), 13 globo (4-7 vuela,
+ * periodico), 5 caja sorpresa, 6 lector, 11 saltarin (39-41 con el palo), 12 minero (32-36 bajo tierra, 37-41 sale), 13 globo (4-7 vuela,
  * 8-14 cae), 15 buzo (15-19 se sumerge, 20-21 bajo el agua, 22-24 sale) */
 static const ZombieDef zombie_defs[ZT_COUNT] = {
  /* anim                 vida casco escudo vel     flags                  andar   comer   morir   */
@@ -159,9 +175,9 @@ static const ZombieDef zombie_defs[ZT_COUNT] = {
  { RE_ZOMBIE_FOOTBALL,   270, 1400, 0,    0.150f, 0,                     6,12,  13,20,  21,24, 0 },              /* deportista */
  { RE_ZOMBIE,            270, 1100, 0,    0.064f, 0,                     8,19,  20,29,  30,39, 0 },              /* caracubo */
  { RE_ZOMBIE_POLEVAULT,  500, 0,    0,    0.150f, ZF_JUMP,               4,12,  42,48,  35,41, 0 },              /* saltador */
- { RE_ZOMBIE_DANCER,     500, 0,    0,    0.070f, ZF_DANCER,            25,35,  20,24,  36,44, 0 },              /* bailon */
- { RE_ZOMBIE_JACKBOX,    500, 0,    0,    0.120f, ZF_JACK,              11,21,  37,47,  28,36, 0 },              /* cajita */
- { RE_ZOMBIE_NEWSPAPER,  270, 0,    150,  0.064f, ZF_PAPER,              9,17,  18,25,  34,44, 0 },              /* lector */
+ { RE_TC_DANCER,         500, 0,    0,    0.070f, ZF_DANCER,            23,33,  39,55,  56,73, 0 },              /* bailon (Tencent: 0-13 moonwalk, 14-22 senala) */
+ { RE_ZOMBIE_JACKBOX,    500, 0,    0,    0.120f, ZF_JACK,               9,17,  18,25,  34,44, 0 },              /* cajita (26-33 sale el payaso) */
+ { RE_ZOMBIE_NEWSPAPER,  270, 0,    150,  0.064f, ZF_PAPER,             11,21,  22,27,  28,36, 0 },              /* lector (0-3 sin periodico, 37-47 / 48-53 enfadado) */
  { RE_ZOMBIE_BACKUP,     270, 0,    0,    0.070f, 0,                    11,27,   5,10,  -1,-1, 0 },              /* extra */
  { RE_ZOMBIE_GARGANTUAR,3000, 0,    0,    0.050f, ZF_GARG,               6,17,  18,25,  33,48, 0 },              /* zombistein */
  { RE_ZOMBIE_LADDER,     500, 0,    0,    0.120f, ZF_LADDER,             7,17,  45,50,  24,32, 0 },              /* escalador */
@@ -171,7 +187,7 @@ static const ZombieDef zombie_defs[ZT_COUNT] = {
  { RE_ZOMBIE_BALLOON,    270, 0,    0,    0.064f, ZF_FLY,               15,20,  21,31,  32,38, 0 },              /* globo */
  { RE_ZOMBIE,            270, 0,    0,    0.064f, ZF_SWIM,               8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* playero */
  { RE_ZOMBIE_SNORKEL,    270, 0,    0,    0.064f, ZF_SWIM,               6,14,  25,30,  31,39, 0 },              /* buzo */
- { RE_ZOMBIE,            500, 0,    0,    0.120f, ZF_SWIM | ZF_JUMP,     8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* delfin (sin animacion propia) */
+ { RE_TC_DOLPHIN,        500, 0,    0,    0.120f, ZF_SWIM | ZF_JUMP,    42,51,  52,62,  63,71, 0 },              /* delfin (Tencent: 4-13 en tierra, 36-41 salto, 52-62 sin delfin) */
  { RE_BOSS,            40000, 0,    0,    0.0f,   0,                     0,8,    0,8,    0,8,   0 },              /* Dr. Zombi */
  { RE_ZOMBIE_IMP,        270, 0,    0,    0.100f, ZF_SMALL,              9,16,   0,8,   17,23, 0 },              /* zombidito */
 };
@@ -182,7 +198,7 @@ static const signed char level_reward[50] = {
     PL_SUNFLOWER, PL_CHERRYBOMB, PL_WALLNUT, -2, PL_POTATOMINE, PL_SNOWPEA, PL_CHOMPER, PL_REPEATER, -1, PL_PUFFSHROOM,
     PL_SUNSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, -1, PL_HYPNOSHROOM, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_DOOMSHROOM, -1, PL_LILYPAD,
     PL_SQUASH, PL_THREEPEATER, PL_TANGLEKELP, -1, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT, -1, PL_SEASHROOM,
-    -1, PL_CACTUS, -1, -1, -1, PL_STARFRUIT, -1, -1, -1, PL_CABBAGEPULT,
-    PL_FLOWERPOT, PL_KERNELPULT, -1, -1, -1, -1, -1, PL_MELONPULT, -1, -1 };
+    PL_PLANTERN, PL_CACTUS, PL_BLOVER, PL_PUMPKIN, -1, PL_STARFRUIT, PL_GARLIC, -1, -1, PL_CABBAGEPULT,
+    PL_FLOWERPOT, PL_KERNELPULT, PL_GATLING, PL_WINTERMELON, PL_CATTAIL, PL_COBCANNON, -1, PL_MELONPULT, -1, -1 };
 
 #endif

@@ -19,6 +19,9 @@ enum { XS_MUSIC_ON, XS_MUSIC_OFF, XS_PICK_LEVEL, XS_COST, XS_YES_NO, XS_X_PICK, 
        XS_START_PAUSE, XS_PRESS_X, XS_X_CONTINUE, XS_X_NEXT, XS_HELP, XS_ABOUT1, XS_ABOUT2, XS_AREA_DAY,
        XS_AREA_NIGHT, XS_AREA_POOL, XS_AREA_FOG, XS_AREA_ROOF, XS_NUT, XS_X_REMOVE, XS_X_PLAY_O_BACK, XS_COUNT };
 const char *XS(int id);
+/* nombre y ficha del almanaque de una planta (las del Tencent no estan en las tablas del J2ME) */
+const char *plant_name(int t);
+const char *plant_desc(int t);
 
 /* lapida morada con calavera (pausa y avisos): x,y = esquina sup. izq. de la caja, w >= 140, h >= 80 */
 void ui_tomb_dialog(float x, float y, float w, float h);
