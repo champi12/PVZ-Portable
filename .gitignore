@@ -19,3 +19,5 @@ ICON0.PNG
 *.jar
 saves/
 *.zip
+# port de PC: generados
+pcport/psp/ProjectVersion.h.bak
