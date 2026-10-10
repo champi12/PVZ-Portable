@@ -1,8 +1,0 @@
-# Integer constant patches applied to the original bytecode during translation:
-#   class  method(descriptor)  bytecode-offset  new-value
-# Logical screen height: the phone build uses a 480x320 landscape canvas.
-# cc <init>()V 14 272   (tested: the lawn does not fit, see README)
-# Frame period of the main loop in ms (phone: 166 ms, ~6 fps).
-# Game run()V 47 83
-# Game run()V 72 83
-# Game run()V 79 83

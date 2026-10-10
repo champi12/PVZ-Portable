@@ -1,6 +1,0 @@
-Ejecutar un .jar J2ME sin pantalla (para comparar con el original):
-1) git clone https://github.com/hex007/freej2me
-2) javac -d cls -sourcepath freej2me/src $(find freej2me/src/org/recompile/mobile freej2me/src/javax freej2me/src/com -name "*.java") Headless.java
-3) java -Djava.awt.headless=true -cp cls Headless PvZBV.jar 320 240 guion.txt salida/
-Guion: "ms accion" -> key <codigo> | down/up <codigo> | tap x y | shot nombre | burst nombre n intervalo
-Teclas: 53 = 5 (aceptar), 50/56/52/54 = 2/8/4/6 (flechas)

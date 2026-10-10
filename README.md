@@ -1,72 +1,37 @@
-# Plantas contra Zombis para PSP
+# Plants vs. Zombies (PC) para PSP
 
-Port nativo para **PSP** de *Plants vs. Zombies*: gráficos, fuentes y animaciones de la
-versión J2ME 4.6.0 (EA), con la **jugabilidad, las hordas, la música y los efectos de la
-versión de PC**. Motor propio en C (sceGu + sceMp3, sin SDL) a **60 fps**.
+Port del *Plants vs. Zombies* de PC a la **PSP**, basado en
+[PvZ-Portable](https://github.com/wszqkzqk/PvZ-Portable) (reimplementación libre del PvZ GOTY, LGPL-3.0).
+Funciona con los datos de una copia propia del juego: `main.pak` y la carpeta `properties/` de la GOTY
+(con Zombatar y logros) o los archivos de la versión 1.0.
 
-* Vista del jardín igual que el J2ME (480×320 a 1:1): la casa a la izquierda, el césped
-  desde x=171 y la acera a la derecha, por donde entran los zombis.
-* Sin pantallas de carga al entrar en un nivel ni entre niveles.
-* Como el J2ME: menú de la lápida (aventura, opciones, almanaque, elegir nivel, acerca de),
-  intro de cada nivel con la cámara yendo a la calle para ver los zombis, elección de
-  plantas en el panel "¡ELIGE TUS PLANTAS!", cortacésped que entran rodando y la barra de
-  semillas que baja, y efectos de partículas del J2ME (¡SPUDOW!, ¡POWIE!, ¡DOOM!, llamas,
-  humo, salpicaduras de guisante, trozos de cono y cubo...).
-* 50 niveles de la aventura del J2ME, 31 plantas y 21 zombis con valores del PC.
-* Objetivo: PSP-1000 (32 MB, 333 MHz).
+> El repositorio no contiene ningún recurso del juego (EA / PopCap).
 
-El historial detallado del desarrollo está en [PROGRESO.md](PROGRESO.md).
-
-> El repositorio no contiene el contenido del juego (EA / PopCap). Para compilar hace
-> falta la carpeta `data/` (`gfx.pak`, `anim.pak`, `sfx.pak` y `music/*.mp3`), que se genera
-> con las herramientas de `tools/` a partir del `.jar` del J2ME y de los sonidos del PvZ de
-> PC (ver PROGRESO.md).
-
-## Controles
-
-| PSP | Acción |
-|---|---|
-| Cruceta / stick | Mover el cursor por las casillas (izquierda en la primera columna: caja de semillas, como el PvZBV) |
-| ✕ | Abrir la caja de semillas / elegir semilla / plantar |
-| ◯ | Cancelar |
-| △ | Pala |
-| L / R | Siguiente sobre que se puede plantar |
-| ✕ sobre el mazorcañón | Apuntar (luego ✕ en la casilla de destino) |
-| SELECT | Última resistencia: empezar el asalto |
-| START | Pausa |
-
-Los soles se recogen solos al pasar el cursor cerca.
-
-**¡Elige tus plantas!** (cuando tienes más plantas que huecos): cuadrícula de 4 columnas; ✕ elige o
-quita; izquierda desde la primera columna lleva el cursor a las elegidas para quitarlas con ✕;
-△ empieza la partida; START abre la pausa (reanudar, reiniciar, menú, sonido).
-
-**Idiomas**: los 6 del J2ME (inglés, francés, alemán, italiano, portugués y español). Se usa el idioma
-de la consola y se puede cambiar en Opciones.
-
-**Minijuegos** (menú principal): bolos con nueces, combate de portales, última resistencia, zombis
-invisibles y zombis veloces (de la versión Tencent del J2ME).
-
-**Menú**: cruceta y ✕; ◯ va a "salir". En el almanaque, ◀ ▶ pasan de ficha y ▲ ▼ desplazan el texto.
+* `pcport/` — el código del juego con los cambios para la PSP. Detalles en [pcport/PSP.md](pcport/PSP.md).
+* `tools/pcport/` — herramientas para los datos: música pre-renderizada para la PSP, empaquetar `main.pak` y pasar
+  a XML las animaciones y partículas de la versión 1.0. Ver [tools/pcport/README.md](tools/pcport/README.md).
 
 ## Compilar
 
-Toolchain [pspdev](https://github.com/pspdev/pspdev) con `psp-config` en el `PATH`:
+    cd pcport/psp && make          # necesita pspdev (GCC 15, SDL2, libpng, libjpeg, zlib)
 
-```sh
-make                # -> EBOOT.PBP
-./build_dist.sh     # -> dist/PSP/GAME/PVZ/ (EBOOT.PBP + data/)
-```
+## Instalar
 
-Copia `dist/PSP/GAME/PVZ/` a `ms0:/PSP/GAME/PVZ/` en la Memory Stick.
+En `ms0:/PSP/GAME/PVZPC/`: `EBOOT.PBP`, `main.pak`, la carpeta `properties/` y la carpeta `music/` que genera
+`tools/pcport/render_music.py` a partir de `sounds/mainmusic.mo3`. Las partidas y la caché van en `savedata/`.
 
-## Pruebas automáticas
+## Controles (como en las versiones de consola)
 
-`tools/ppsspp_test.sh <nivel> <segundos> <carpeta>` compila en modo `AUTOTEST` (el juego se
-juega solo), lo ejecuta en `PPSSPPHeadless` y guarda capturas y una hoja de contacto.
+| PSP | Acción |
+|---|---|
+| Cruceta / stick | Mover la selección (en un nivel, de casilla en casilla) |
+| ✕ | Aceptar / plantar |
+| ◯ | Volver (en un nivel: soltar la planta o la pala) |
+| L / R | Planta anterior / siguiente (en un nivel) |
+| △ | Pala |
+| □ | Pausa |
+| START | Menú |
+| SELECT | Vista: 16:9, 4:3 con bandas o zoom |
 
-## Otras carpetas
-
-* `j2me_traducido/`: la primera versión del port, que traduce automáticamente el bytecode
-  del juego J2ME original a C++ (`jvm2cpp.py`). Es fiel al original pero va a ~6 fps, como
-  en el móvil. Se mantiene como referencia.
+Los soles y monedas se recogen al pasar la selección por encima. Arriba a la izquierda hay un contador de
+fotogramas (FPS) y de actualizaciones del juego por segundo (L, lo normal es 100).
