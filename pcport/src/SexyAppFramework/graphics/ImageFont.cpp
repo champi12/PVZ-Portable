@@ -28,6 +28,7 @@
 #include "SexyAppBase.h"
 #include "MemoryImage.h"
 #include "graphics/GLImage.h"
+#include "graphics/GLInterface.h"
 #include <algorithm>
 #include <mutex>
 #include <format>
@@ -584,7 +585,16 @@ bool FontData::HandleCommand(const ListDataElement& theParams)
 
 				if ((Image*)anImage != nullptr)
 				{
-#ifndef __PSP__  // PSP: GetSharedImage ya la deja como textura sin copia en memoria
+#ifdef __PSP__
+					// PSP: textura reducida ya y fuera la copia en memoria normal
+					if (isNew && mApp->mGLInterface)
+					{
+						GLImage* aLoaded = (GLImage*)(Image*)anImage;
+						aLoaded->mPurgeBits = true;
+						mApp->mGLInterface->CreateImageTexture(aLoaded);
+						aLoaded->PurgeBits();
+					}
+#else
 					if (isNew)
 						anImage->Palletize();
 #endif

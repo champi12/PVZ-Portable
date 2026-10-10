@@ -36,6 +36,9 @@
 #include "paklib/PakInterface.h"
 #include "misc/PerfTimer.h"
 #include "misc/XMLParser.h"
+#include "graphics/GLImage.h"
+#include "graphics/GLInterface.h"
+#include "SexyAppBase.h"
 #include "../Resources.h"
 #include "Common.h"
 
@@ -350,9 +353,20 @@ bool DefinitionLoadImage(Image** theImage, const std::string& theName)
 		if (aPrefixLen < theName.size())
 		{
 			std::string aPathToTry = aLoadResPath.mDirectory + theName.substr(aPrefixLen);
-			SharedImageRef aImageRef = gSexyAppBase->GetSharedImage(aPathToTry);
+			bool isNew = false;
+			SharedImageRef aImageRef = gSexyAppBase->GetSharedImage(aPathToTry, "", &isNew);
 			if ((Image*)aImageRef != nullptr)
 			{
+#ifdef __PSP__
+				// PSP: textura reducida ya y fuera la copia en memoria normal
+				if (isNew && gSexyAppBase->mGLInterface)
+				{
+					GLImage* aLoaded = (GLImage*)(Image*)aImageRef;
+					aLoaded->mPurgeBits = true;
+					gSexyAppBase->mGLInterface->CreateImageTexture(aLoaded);
+					aLoaded->PurgeBits();
+				}
+#endif
 				PvzpAddImageToMap(&aImageRef, theName);
 				PvzpMarkImageForSanding((Image*)aImageRef);
 				*theImage = (Image*)aImageRef;
