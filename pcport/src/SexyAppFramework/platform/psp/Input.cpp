@@ -1,6 +1,8 @@
 /*
  * PSP: cursor virtual con el stick o la cruceta. X = clic, O = clic derecho, START = ESC (menu),
- * SELECT = espacio (pausa). La vista (480x360 a escala 0.6) sube y baja siguiendo al cursor.
+ * CUADRADO = espacio (pausa), SELECT = zoom (la pantalla entera o a escala 0.6 siguiendo al cursor), R = rapido.
+ * En un nivel, como en las versiones de consola: la cruceta salta de casilla en casilla, L/R eligen sobre,
+ * TRIANGULO = pala y los soles y monedas se recogen al pasar el cursor por encima.
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 #include <pspctrl.h>
@@ -16,6 +18,16 @@
 #include "graphics/GLInterface.h"
 #include "graphics/GLPlatform.h"
 #include "widget/WidgetManager.h"
+#include "LawnApp.h"
+#include "Lawn/Board.h"
+#include "Lawn/SeedPacket.h"
+#include "Lawn/Coin.h"
+#include "Lawn/CursorObject.h"
+#ifdef PSP_TEST_OPTIONS
+#include "Lawn/Widget/NewOptionsDialog.h"
+#include "widget/Slider.h"
+#include "widget/Checkbox.h"
+#endif
 
 using namespace Sexy;
 
@@ -78,24 +90,110 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 	float ax = (pad.Lx - 128) / 128.0f, ay = (pad.Ly - 128) / 128.0f;
 	if (fabsf(ax) < 0.25f) ax = 0;
 	if (fabsf(ay) < 0.25f) ay = 0;
-	float sp = (b & PSP_CTRL_RTRIGGER) ? 14 : 8;
+	/* nivel en juego: control de consola (ver arriba) */
+	LawnApp *app = (LawnApp *)this;
+	Board *bd = app->mBoard;
+	bool inLevel = bd && app->mGameScene == GameScenes::SCENE_PLAYING && !bd->mPaused && GetDialogCount() == 0;
+	static int sGX = 2, sGY = 2;
+	static uint64_t sHoldT = 0;
+	static Board *sLastBoard = nullptr;
+	if (bd != sLastBoard) { sLastBoard = bd; sGX = 2; sGY = 2; }
+#ifdef PSP_AUTOPAD
+	{   /* pruebas: "segundo:mascara;..." pulsa esos botones 0,1 s */
+		static const char *sNext = PSP_AUTOPAD; static int sDown = 0; static unsigned sMask = 0; static int sBase = -1;
+		int ms = (int)(sceKernelGetSystemTimeWide() / 1000), f, n; unsigned m;
+		if (sBase < 0 && inLevel) sBase = ms;   /* los segundos cuentan desde que se puede jugar */
+		ms = sBase < 0 ? -1000000 : ms - sBase;
+		if (*sNext && sscanf(sNext, "%d:%x%n", &f, &m, &n) == 2) {
+			if (!sDown && ms >= f * 1000) { sDown = ms; sMask = m; FILE *lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "PAD %x\n", m); fclose(lf); } }
+			else if (sDown && ms >= sDown + 100) { sDown = 0; sMask = 0; sNext += n; if (*sNext == ';') sNext++; }
+		}
+		b |= sMask; down = b & ~gPrev; up = gPrev & ~b;
+	}
+#endif
+	unsigned int moveB = b;
+	auto clickAt = [&](int cx, int cy, int btn) {
+		int ox = (int)gCurX, oy = (int)gCurY;
+		mWidgetManager->MouseMove(cx, cy); mWidgetManager->MouseDown(cx, cy, btn); mWidgetManager->MouseUp(cx, cy, btn);
+		mWidgetManager->MouseMove(ox, oy);
+	};
+	if (inLevel) {
+		unsigned int dirs = b & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT | PSP_CTRL_UP | PSP_CTRL_DOWN);
+		uint64_t t = sceKernelGetSystemTimeWide();
+		bool step = (down & dirs) != 0;
+		if (dirs && !step && t - sHoldT > 300000) { step = true; sHoldT = t - 180000; }   /* repeticion: 0,3 s y luego cada 0,12 s */
+		if (down & dirs) sHoldT = t;
+		if (step) {
+			int rows = bd->StageHas6Rows() ? 6 : 5;
+			if (b & PSP_CTRL_LEFT) sGX--;
+			if (b & PSP_CTRL_RIGHT) sGX++;
+			if (b & PSP_CTRL_UP) sGY--;
+			if (b & PSP_CTRL_DOWN) sGY++;
+			sGX = std::clamp(sGX, 0, 8); sGY = std::clamp(sGY, 0, rows - 1);
+			gCurX = bd->mX + bd->GridToPixelX(sGX, sGY) + 40;
+			gCurY = bd->mY + bd->GridToPixelY(sGX, sGY) + 45;
+			mLastUserInputTick = mLastTimerTime;
+			mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
+		}
+		moveB &= ~dirs;   /* la cruceta no mueve el cursor libre */
+		SeedBank *bank = bd->mSeedBank.get();
+		if (bank && bank->mNumPackets > 0 && (down & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
+			static int sSeed = -1;
+			int n = bank->mNumPackets;
+			sSeed = (down & PSP_CTRL_RTRIGGER) ? (sSeed + 1) % n : (sSeed - 1 + n) % n;
+			SeedPacket &pk = bank->mSeedPackets[sSeed];
+			if (bd->mCursorObject->mCursorType != CursorType::CURSOR_TYPE_NORMAL)
+				clickAt((int)gCurX, (int)gCurY, -1);   /* suelta lo que llevaba */
+			clickAt(bd->mX + bank->mX + pk.mX + pk.mOffsetX + pk.mWidth / 2, bd->mY + bank->mY + pk.mY + pk.mHeight / 2, 1);
+		}
+		if (down & PSP_CTRL_TRIANGLE) {
+			if (bd->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_SHOVEL) clickAt((int)gCurX, (int)gCurY, -1);
+			else {
+				Rect r = bd->GetShovelButtonRect();
+				clickAt(bd->mX + r.mX + r.mWidth / 2, bd->mY + r.mY + r.mHeight / 2, 1);
+			}
+		}
+		/* soles y monedas: se recogen al pasar por encima */
+		int lx = (int)gCurX - bd->mX, ly = (int)gCurY - bd->mY;
+		for (Coin *c : bd->mCoins) {
+			if (c->mType != CoinType::COIN_SUN && c->mType != CoinType::COIN_SMALLSUN && c->mType != CoinType::COIN_LARGESUN &&
+				c->mType != CoinType::COIN_SILVER && c->mType != CoinType::COIN_GOLD && c->mType != CoinType::COIN_DIAMOND) continue;
+			HitResult hr;
+			if (c->MouseHitTest(lx, ly, &hr)) c->MouseDown(lx, ly, 1);
+		}
+	}
+
+	/* velocidad por tiempo (no por llamada): 60 pasos por segundo */
+	static uint64_t sLast = 0;
+	uint64_t now = sceKernelGetSystemTimeWide();
+	float k = sLast ? std::min((now - sLast) / 16667.0f, 4.0f) : 1.0f;
+	sLast = now;
+	float sp = ((!inLevel && (b & PSP_CTRL_RTRIGGER)) ? 14 : 8) * k, dp = 6 * k;
 	float dx = ax * sp, dy = ay * sp;
-	if (b & PSP_CTRL_LEFT) dx -= 6;
-	if (b & PSP_CTRL_RIGHT) dx += 6;
-	if (b & PSP_CTRL_UP) dy -= 6;
-	if (b & PSP_CTRL_DOWN) dy += 6;
+	if (moveB & PSP_CTRL_LEFT) dx -= dp;
+	if (moveB & PSP_CTRL_RIGHT) dx += dp;
+	if (moveB & PSP_CTRL_UP) dy -= dp;
+	if (moveB & PSP_CTRL_DOWN) dy += dp;
 	if (dx != 0 || dy != 0)
 	{
 		gCurX = std::clamp(gCurX + dx, 0.0f, (float)mWidth - 1);
 		gCurY = std::clamp(gCurY + dy, 0.0f, (float)mHeight - 1);
 		mLastUserInputTick = mLastTimerTime;
 		mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
+		if (inLevel) {   /* la cruceta sigue desde la casilla donde quedo el stick */
+			sGX = std::clamp(bd->PixelToGridXKeepOnBoard((int)gCurX - bd->mX, (int)gCurY - bd->mY), 0, 8);
+			sGY = std::clamp(bd->PixelToGridYKeepOnBoard((int)gCurX - bd->mX, (int)gCurY - bd->mY), 0, bd->StageHas6Rows() ? 5 : 4);
+		}
 	}
 	gPspCursorX = (int)gCurX; gPspCursorY = (int)gCurY;
 
 	/* la vista sigue al cursor: 600 logicos a 0.6 = 360, se ven 272 */
-	float target = std::clamp(gCurY * 0.6f - 136.0f, 0.0f, 360.0f - 272.0f);
-	PspSetCameraY(PspGetCameraY() + (target - PspGetCameraY()) * 0.25f);
+	if ((down & PSP_CTRL_SELECT) || (!inLevel && (down & PSP_CTRL_LTRIGGER))) PspSetZoom(!PspGetZoom());
+	if (PspGetZoom())
+	{
+		float target = std::clamp(gCurY * 0.6f - 136.0f, 0.0f, 360.0f - 272.0f);
+		PspSetCameraY(PspGetCameraY() + (target - PspGetCameraY()) * 0.25f);
+	}
 
 #ifdef PSP_AUTOPLAY
 	if (gAutoEnter && --gAutoEnter == 0) { mWidgetManager->KeyDown(KEYCODE_RETURN); mWidgetManager->KeyChar('\r'); mWidgetManager->KeyUp(KEYCODE_RETURN); }
@@ -110,6 +208,25 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 		}
 	}
 #endif
+#ifdef PSP_TEST_OPTIONS
+	{   /* pruebas: abre Opciones a los PSP_TEST_OPTIONS s y toca cada control */
+		static int sStep = 0;
+		int sec = (int)(sceKernelGetSystemTimeWide() / 1000000) - PSP_TEST_OPTIONS;
+		if (sec >= sStep * 3 && sStep < 7) {
+			FILE *lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "OPC paso %d\n", sStep); fclose(lf); }
+			LawnApp *app = (LawnApp *)this;
+			NewOptionsDialog *d = (NewOptionsDialog *)app->GetDialog(Dialogs::DIALOG_NEWOPTIONS);
+			if (sStep == 0) app->DoNewOptions(true);
+			else if (d && sStep == 1) d->SliderVal(4, 0.3);
+			else if (d && sStep == 2) d->SliderVal(5, 0.4);
+			else if (d && sStep == 3) { d->mFullscreenCheckbox->SetChecked(!d->mFullscreenCheckbox->IsChecked(), true); }
+			else if (d && sStep == 4) { d->mHardwareAccelerationCheckbox->SetChecked(!d->mHardwareAccelerationCheckbox->IsChecked(), true); }
+			else if (d && sStep == 5) app->KillNewOptionsDialog();
+			sStep++;
+			lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "OPC paso %d hecho\n", sStep - 1); fclose(lf); }
+		}
+	}
+#endif
 	int x = (int)gCurX, y = (int)gCurY;
 	if (down & PSP_CTRL_CROSS) { mLastUserInputTick = mLastTimerTime; mWidgetManager->MouseDown(x, y, 1); }
 	if (up & PSP_CTRL_CROSS) mWidgetManager->MouseUp(x, y, 1);
@@ -117,8 +234,8 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 	if (up & PSP_CTRL_CIRCLE) mWidgetManager->MouseUp(x, y, -1);
 	if (down & PSP_CTRL_START) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
 	if (up & PSP_CTRL_START) mWidgetManager->KeyUp(KEYCODE_ESCAPE);
-	if (down & PSP_CTRL_SELECT) mWidgetManager->KeyDown(KEYCODE_SPACE);
-	if (up & PSP_CTRL_SELECT) mWidgetManager->KeyUp(KEYCODE_SPACE);
+	if (down & PSP_CTRL_SQUARE) mWidgetManager->KeyDown(KEYCODE_SPACE);
+	if (up & PSP_CTRL_SQUARE) mWidgetManager->KeyUp(KEYCODE_SPACE);
 	gPrev = b;
 	return false;
 }

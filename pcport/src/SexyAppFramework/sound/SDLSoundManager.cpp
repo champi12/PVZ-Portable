@@ -27,6 +27,11 @@
 #include "paklib/PakInterface.h"
 #include <memory>
 #include <vector>
+#ifdef __PSP__
+#include "Common.h"
+#include <cstdio>
+#include <filesystem>
+#endif
 
 using namespace Sexy;
 
@@ -55,7 +60,9 @@ SDLSoundManager::SDLSoundManager()
 	}
 
 #ifdef __PSP__
-	if (Mix_OpenAudio(22050, AUDIO_S16SYS, 1, 1024))   // PSP: los efectos se guardan decodificados; mono 22 kHz = 1/4 de memoria
+	// PSP: los efectos se guardan decodificados; mono 22 kHz = 1/4 de memoria. Sin permitir cambios: el driver de
+	// la PSP pediria 44,1 kHz y todo se guardaria al doble; SDL convierte solo la mezcla final
+	if (Mix_OpenAudioDevice(22050, AUDIO_S16SYS, 1, 1024, nullptr, 0))
 #else
 	if (Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 2048))
 #endif
@@ -66,6 +73,9 @@ SDLSoundManager::SDLSoundManager()
 	mInitializedMixer = true;
 
 	Mix_QuerySpec(&mMixerFreq, &mMixerFormat, &mMixerChannels);
+#if defined(__PSP__) && defined(PSP_MEMLOG)
+	if (FILE* f = fopen("mem.log", "a")) { fprintf(f, "AUDIO %d Hz, %d canales, formato %x\n", mMixerFreq, mMixerChannels, mMixerFormat); fclose(f); }
+#endif
 	Mix_AllocateChannels(MAX_CHANNELS);
 }
 
@@ -282,8 +292,42 @@ bool SDLSoundManager::LoadSound(intptr_t theSfxID, const std::string& theFilenam
 #endif
 }
 
+#ifdef __PSP__
+// PSP: los sonidos decodificados se guardan en la Memory Stick (PCM ya en el formato de salida); la siguiente
+// vez se leen sin decodificar el OGG, que en la PSP tarda lo bastante para notar tirones en la partida
+static std::string PspSoundCachePath(const std::string& theFilename, int theFreq, int theChannels)
+{
+	std::string aName = theFilename;
+	for (char& c : aName)
+		if (c == '/' || c == '\\')
+			c = '_';
+	// el formato va en la carpeta: si cambia la salida de audio no se mezclan archivos viejos
+	return GetAppDataPath("cache32/snd" + std::to_string(theFreq) + "_" + std::to_string(theChannels) + "/" + aName + ".pcm");
+}
+#endif
+
 bool SDLSoundManager::DecodeSound(intptr_t theSfxID, const std::string& theFilename)
 {
+#ifdef __PSP__
+	std::string aCachePath = PspSoundCachePath(theFilename, mMixerFreq, mMixerChannels);
+	if (FILE* f = fopen(aCachePath.c_str(), "rb"))
+	{
+		fseek(f, 0, SEEK_END);
+		long aLen = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		Uint8* aBuf = aLen > 0 ? (Uint8*)SDL_malloc(aLen) : nullptr;
+		bool ok = aBuf && fread(aBuf, 1, aLen, f) == (size_t)aLen;
+		fclose(f);
+		Mix_Chunk* aChunk = ok ? Mix_QuickLoad_RAW(aBuf, (Uint32)aLen) : nullptr;
+		if (aChunk)
+		{
+			aChunk->allocated = 1;  // Mix_FreeChunk libera aBuf
+			mSourceSounds[theSfxID] = aChunk;
+			return true;
+		}
+		SDL_free(aBuf);
+	}
+#endif
 	for (const char* aFormat : gSoundFormats)
 	{
 		std::string aFilename = theFilename + aFormat;
@@ -307,8 +351,46 @@ bool SDLSoundManager::DecodeSound(intptr_t theSfxID, const std::string& theFilen
 	if (!mSourceSounds[theSfxID])
 		LoadAUSound(theSfxID, theFilename + ".au");
 
+#ifdef __PSP__
+	if (Mix_Chunk* aChunk = mSourceSounds[theSfxID])
+	{
+		std::error_code ec;
+		std::filesystem::create_directories(std::filesystem::path(aCachePath).parent_path(), ec);
+		if (FILE* f = fopen(aCachePath.c_str(), "wb"))
+		{
+			bool ok = fwrite(aChunk->abuf, 1, aChunk->alen, f) == aChunk->alen;
+			fclose(f);
+			if (!ok)
+				remove(aCachePath.c_str());
+		}
+	}
+#endif
 	return !!mSourceSounds[theSfxID];
 }
+
+#ifdef __PSP__
+void SDLSoundManager::PspPreloadShortSounds(int theMaxFileBytes)
+{
+	for (intptr_t i = 0; i < MAX_SOURCE_SOUNDS; i++)
+	{
+		if (mSourceSounds[i] != nullptr || mSourceFileNames[i].empty())
+			continue;
+		bool aSmall = false;
+		for (const char* aFormat : gSoundFormats)
+		{
+			if (PFILE* fp = p_fopen((mSourceFileNames[i] + aFormat).c_str(), "rb"))
+			{
+				p_fseek(fp, 0, SEEK_END);
+				aSmall = p_ftell(fp) <= theMaxFileBytes;
+				p_fclose(fp);
+				break;
+			}
+		}
+		if (aSmall)
+			DecodeSound(i, mSourceFileNames[i]);
+	}
+}
+#endif
 
 intptr_t SDLSoundManager::LoadSound(const std::string& theFilename)
 {

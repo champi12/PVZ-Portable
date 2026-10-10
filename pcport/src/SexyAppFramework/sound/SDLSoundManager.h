@@ -57,6 +57,11 @@ protected:
 	int						FindFreeChannel();
 	bool					LoadAUSound(intptr_t theSfxID, const std::string& theFilename);
 	bool					DecodeSound(intptr_t theSfxID, const std::string& theFilename);
+#ifdef __PSP__
+public:
+	void					PspPreloadShortSounds(int theMaxFileBytes);
+protected:
+#endif
 	void					ReleaseFreeChannels();
 
 public:

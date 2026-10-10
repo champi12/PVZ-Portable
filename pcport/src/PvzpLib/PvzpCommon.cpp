@@ -892,7 +892,7 @@ void FixPixelsOnAlphaEdgeForBlending(Image* theImage)
 	}
 	aImage->mBitsChangedCount++;
 
-	int aDuration = std::max(aTimer.GetDuration(), 0.0);
+	int aDuration = std::max<double>(aTimer.GetDuration(), 0.0);
 	if (aDuration > 20)
 	{
 		PvzpLogLn("LOADING:Long sanding '{}' {} ms on {}", theImage->mFilePath, aDuration, LawnGetCurrentLevelName());
@@ -1038,7 +1038,7 @@ bool PvzpResourceManager::PvzpLoadResources(const std::string& theGroup)
 
 	mLoadedGroups.insert(theGroup);
 
-	int aDuration = std::max(aTimer.GetDuration(), 0.0);
+	int aDuration = std::max<double>(aTimer.GetDuration(), 0.0);
 	if (aDuration > 20)
 	{
 		PvzpLogLn("LOADED: '{}' {} ms on {}", theGroup, aDuration, LawnGetCurrentLevelName());

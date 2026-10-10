@@ -494,7 +494,7 @@ void CutScene::PreloadResources()
 
 	PlaceStreetZombies();
 
-	mBoard->mPreloadTime = std::max(aTimer.GetDuration(), 0.0);
+	mBoard->mPreloadTime = std::max<double>(aTimer.GetDuration(), 0.0);
 	PvzpLogLn("preloading: {} ms", mBoard->mPreloadTime);
 }
 

@@ -62,6 +62,8 @@ void PspGLInit();          // psp/gl_gu.cpp: las funciones GL hechas con sceGu
 void PspSwap();
 void PspSetCameraY(float y);
 float PspGetCameraY();
+void PspSetZoom(bool zoom);
+bool PspGetZoom();
 #endif
 
 inline void PlatformGLInit()

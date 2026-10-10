@@ -593,6 +593,7 @@ bool FontData::HandleCommand(const ListDataElement& theParams)
 						aLoaded->mPurgeBits = true;
 						mApp->mGLInterface->CreateImageTexture(aLoaded);
 						aLoaded->PurgeBits();
+						PspSaveImageCache(aLoaded, PspImageCacheKey(aFileName, ""));
 					}
 #else
 					if (isNew)

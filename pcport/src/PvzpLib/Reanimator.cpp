@@ -380,7 +380,7 @@ void ReanimationCreateAtlas(ReanimatorDefinition* theDefinition, ReanimationType
 	}
 #endif
 
-	int aDuration = std::max(aTimer.GetDuration(), 0.0);
+	int aDuration = std::max<double>(aTimer.GetDuration(), 0.0);
 	if (aDuration > 20 && theReanimationType != ReanimationType::REANIM_NONE)  // report slow atlas creation
 		PvzpLogLn("LOADING:Long atlas '{}' {} ms on {}", aParam.mReanimFileName, aDuration, LawnGetCurrentLevelName());
 }

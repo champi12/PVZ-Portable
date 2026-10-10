@@ -365,6 +365,7 @@ bool DefinitionLoadImage(Image** theImage, const std::string& theName)
 					aLoaded->mPurgeBits = true;
 					gSexyAppBase->mGLInterface->CreateImageTexture(aLoaded);
 					aLoaded->PurgeBits();
+					Sexy::PspSaveImageCache(aLoaded, Sexy::PspImageCacheKey(aPathToTry, ""));
 				}
 #endif
 				PvzpAddImageToMap(&aImageRef, theName);

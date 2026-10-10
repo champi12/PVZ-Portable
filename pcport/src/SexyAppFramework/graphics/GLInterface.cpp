@@ -36,6 +36,12 @@
 #include <cstring>
 #include <mutex>
 #include <vector>
+#ifdef __PSP__
+#include <cstdio>
+#include <cctype>
+#include <filesystem>
+#include "Common.h"
+#endif
 
 
 constexpr const int MAX_VERTICES = 16384;
@@ -1692,3 +1698,130 @@ void GLInterface::FillPoly(const Point theVertices[], int theNumVertices,
 		GfxEnd();
 	}
 }
+
+#ifdef __PSP__
+// PSP: cache de texturas en la Memory Stick. Cada imagen cargada de un archivo se guarda ya reducida y en 16 bits
+// (como la tiene la GU); la siguiente vez se lee tal cual, sin descomprimir el PNG/JPG, aplicar el alfa ni
+// convertirla, que es casi todo el tiempo de las pantallas de carga.
+bool PspTexGetRaw(GLuint id, int* ow, int* oh, int* w, int* h, int* psm, const void** data, int* bytes);
+void* PspTexAlloc(int bytes);
+void PspTexSetRaw(GLuint id, int ow, int oh, int w, int h, int psm, void* data, int bytes);
+
+static constexpr uint32_t PSP_TEX_CACHE_MAGIC = 0x31585450;  // "PTX1"
+
+static std::string PspTexCachePath(const std::string& theKey)
+{
+	std::string aName;
+	for (char c : theKey)
+		aName += isalnum((unsigned char)c) ? (char)toupper((unsigned char)c) : '_';
+	return GetAppDataPath("cache32/tex/" + aName + ".tex");
+}
+
+bool GLInterface::PspSaveTextureCache(MemoryImage* theImage, const std::string& theKey)
+{
+	TextureData* aData = theImage->mRenderData;
+	if (aData == nullptr || aData->mPixelFormat == PixelFormat_Unknown || aData->mTextures.empty())
+		return false;
+	std::string aPath = PspTexCachePath(theKey);
+	std::error_code ec;
+	std::filesystem::create_directories(std::filesystem::path(aPath).parent_path(), ec);
+	FILE* f = fopen(aPath.c_str(), "wb");
+	if (!f)
+		return false;
+	int32_t aHead[16] = {
+		(int32_t)PSP_TEX_CACHE_MAGIC, theImage->mWidth, theImage->mHeight, (int32_t)theImage->mRenderFlags,
+		(theImage->mHasAlpha ? 1 : 0) | (theImage->mHasTrans ? 2 : 0), aData->mTexVecWidth, aData->mTexVecHeight,
+		aData->mTexPieceWidth, aData->mTexPieceHeight, (int32_t)aData->mPixelFormat, aData->mImageFlags,
+		aData->mTexMemSize, 0, 0, (int32_t)aData->mTextures.size(), 0 };
+	memcpy(&aHead[12], &aData->mMaxTotalU, 4);
+	memcpy(&aHead[13], &aData->mMaxTotalV, 4);
+	bool ok = fwrite(aHead, sizeof(aHead), 1, f) == 1;
+	for (TextureDataPiece& aPiece : aData->mTextures)
+	{
+		int ow, oh, w, h, psm, bytes;
+		const void* aPixels;
+		if (!ok || !PspTexGetRaw(aPiece.mTexture, &ow, &oh, &w, &h, &psm, &aPixels, &bytes))
+		{
+			ok = false;
+			break;
+		}
+		int32_t aPieceHead[8] = { aPiece.mWidth, aPiece.mHeight, ow, oh, w, h, psm, bytes };
+		ok = fwrite(aPieceHead, sizeof(aPieceHead), 1, f) == 1 && fwrite(aPixels, 1, bytes, f) == (size_t)bytes;
+	}
+	fclose(f);
+	if (!ok)
+		remove(aPath.c_str());
+	return ok;
+}
+
+GLImage* GLInterface::PspLoadTextureCache(const std::string& theKey)
+{
+	FILE* f = fopen(PspTexCachePath(theKey).c_str(), "rb");
+	if (!f)
+		return nullptr;
+	int32_t aHead[16];
+	if (fread(aHead, sizeof(aHead), 1, f) != 1 || (uint32_t)aHead[0] != PSP_TEX_CACHE_MAGIC || aHead[14] <= 0 || aHead[14] > 4096)
+	{
+		fclose(f);
+		return nullptr;
+	}
+	GLImage* anImage = new GLImage(this);
+	anImage->mWidth = aHead[1];
+	anImage->mHeight = aHead[2];
+	anImage->mRenderFlags = (uint32_t)aHead[3];
+	anImage->mHasAlpha = (aHead[4] & 1) != 0;
+	anImage->mHasTrans = (aHead[4] & 2) != 0;
+	anImage->mPurgeBits = true;
+	anImage->mBitsChanged = false;
+
+	TextureData* aData = new TextureData();
+	aData->mWidth = aHead[1];
+	aData->mHeight = aHead[2];
+	aData->mTexVecWidth = aHead[5];
+	aData->mTexVecHeight = aHead[6];
+	aData->mTexPieceWidth = aHead[7];
+	aData->mTexPieceHeight = aHead[8];
+	aData->mPixelFormat = (PixelFormat)aHead[9];
+	aData->mImageFlags = aHead[10];
+	aData->mTexMemSize = aHead[11];
+	memcpy(&aData->mMaxTotalU, &aHead[12], 4);
+	memcpy(&aData->mMaxTotalV, &aHead[13], 4);
+	aData->mBitsChangedCount = anImage->mBitsChangedCount;
+	aData->mTextures.resize(aHead[14]);
+	anImage->mRenderData = aData;
+	{
+		std::scoped_lock lk(mCritSect);
+		mImageSet.insert(anImage);
+	}
+
+	bool ok = true;
+	for (TextureDataPiece& aPiece : aData->mTextures)
+	{
+		int32_t p[8];
+		aPiece.mTexture = 0;
+		if (!ok || fread(p, sizeof(p), 1, f) != 1 || p[7] <= 0 || p[7] > 4 * 1024 * 1024)
+		{
+			ok = false;
+			continue;
+		}
+		aPiece.mWidth = p[0];
+		aPiece.mHeight = p[1];
+		void* aPixels = PspTexAlloc(p[7]);
+		if (!aPixels || fread(aPixels, 1, p[7], f) != (size_t)p[7])
+		{
+			free(aPixels);
+			ok = false;
+			continue;
+		}
+		glGenTextures(1, &aPiece.mTexture);
+		PspTexSetRaw(aPiece.mTexture, p[2], p[3], p[4], p[5], p[6], aPixels, p[7]);
+	}
+	fclose(f);
+	if (!ok)
+	{
+		delete anImage;  // ~GLImage libera sus texturas
+		return nullptr;
+	}
+	return anImage;
+}
+#endif

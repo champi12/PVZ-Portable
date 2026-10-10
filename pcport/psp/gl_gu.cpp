@@ -1,8 +1,8 @@
 /*
  * gl_gu.cpp - Las ~40 funciones de OpenGL ES 2 que usa GLInterface.cpp, hechas con sceGu de la PSP.
  * El shader del juego es fijo (color * textura, mezcla normal o aditiva), asi que se emula sin shaders.
- * La pantalla logica de 800x600 se dibuja a escala 0.6 (480x360) y se ve una ventana de 272 de alto que
- * sigue al cursor (PspSetCameraY).
+ * La pantalla logica de 800x600 se ve entera (escala 272/600, con bandas a los lados) o, con zoom, a escala
+ * 0.6 (480x360) con una ventana de 272 de alto que sigue al cursor (PspSetCameraY).
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
@@ -11,6 +11,7 @@
 #include <pspmoduleinfo.h>
 #include <pspgu.h>
 #include <psputility.h>
+#include <psppower.h>
 #include <malloc.h>
 #include <pspsysmem.h>
 #include <pspthreadman.h>
@@ -31,7 +32,8 @@ static unsigned int __attribute__((aligned(64))) gList[512 * 1024];   /* 2 MB de
 static bool gFrameOpen = false;
 static volatile int gSwaps = 0, gUploads = 0, gDraws = 0;
 volatile int gPspWhereLine = 0, gPspCalls = 0; volatile const char *gPspWhereFile = "";
-static float gScale = 0.6f, gCamY = 0;
+static float gScale = 272.0f / 600.0f, gCamY = 0, gOffX = (480 - 800 * 272.0f / 600.0f) / 2;
+static bool gZoom = false;
 
 struct Tex { int ow = 0, oh = 0, w = 0, h = 0, psm = GU_PSM_8888, filter = GU_NEAREST, wrap = GU_CLAMP; void *data = nullptr; int bytes = 0; };
 #define MAX_TEX 16384
@@ -47,18 +49,36 @@ static GLenum gBlendS = GL_SRC_ALPHA, gBlendD = GL_ONE_MINUS_SRC_ALPHA;
 static std::vector<unsigned char> gVbo;
 static unsigned int gClear = 0xFF000000;
 
-void PspSetCameraY(float y) { gCamY = y; }
+void PspSetCameraY(float y) { gCamY = gZoom ? y : 0; }
+void PspSetZoom(bool zoom)
+{
+	gZoom = zoom;
+	gScale = zoom ? 0.6f : 272.0f / 600.0f;
+	gOffX = zoom ? 0 : (480 - 800 * gScale) / 2;
+	if (!zoom) gCamY = 0;
+}
+bool PspGetZoom() { return gZoom; }
 float PspGetCameraY() { return gCamY; }
 
+#ifdef PSP_MEMLOG
+static uint64_t gTBegin, gTLastSwap, gAccDraw, gAccSync, gAccWait, gAccTotal;
+#endif
+static unsigned int gSwapV = 0;   /* refresco en el que se pidio el ultimo cambio de buffer */
 static void FrameBegin()
 {
 	if (gFrameOpen) return;
+	/* no dibujar en el buffer que aun se ve: el cambio pedido se hace en el siguiente refresco */
+	while (sceDisplayGetVcount() == gSwapV) sceDisplayWaitVblankStart();
+#ifdef PSP_MEMLOG
+	gTBegin = sceKernelGetSystemTimeWide();
+#endif
 	sceGuStart(GU_DIRECT, gList);
 	gFrameOpen = true;
 }
 
 void PspGuInit()
 {
+	scePowerSetClockFrequency(333, 333, 166);   /* la PSP arranca a 222 MHz */
 	sceGuInit();
 	sceGuStart(GU_DIRECT, gList);
 	sceGuDrawBuffer(GU_PSM_8888, (void *)0, BUF_W);
@@ -84,7 +104,7 @@ extern int gPspCursorX, gPspCursorY;
 static void DrawCursor()
 {
 	/* flecha blanca con borde negro en la posicion del cursor virtual */
-	float x = gPspCursorX * gScale, y = gPspCursorY * gScale - gCamY;
+	float x = gPspCursorX * gScale + gOffX, y = gPspCursorY * gScale - gCamY;
 	struct V { uint32_t c; float x, y, z; };
 	V *v = (V *)sceGuGetMemory(6 * sizeof(V));
 	v[0] = { 0xFF000000, x - 1, y - 2, 0 }; v[1] = { 0xFF000000, x - 1, y + 14, 0 }; v[2] = { 0xFF000000, x + 11, y + 11, 0 };
@@ -122,8 +142,14 @@ void PspSwap()
 	if (++sFrames % 120 == 0) PspMemReport("frame");
 	FrameBegin();
 	DrawCursor();
+#ifdef PSP_MEMLOG
+	uint64_t t0 = sceKernelGetSystemTimeWide();
+#endif
 	sceGuFinish();
 	sceGuSync(0, 0);
+#ifdef PSP_MEMLOG
+	uint64_t t1 = sceKernelGetSystemTimeWide();
+#endif
 #ifdef PSP_SHOT_EVERY
 	{   /* pruebas: guarda el fotograma cada PSP_SHOT_EVERY como shotNNNNNNN.raw (480x272 RGBA) */
 		static int n;
@@ -137,9 +163,26 @@ void PspSwap()
 		}
 	}
 #endif
-	sceDisplayWaitVblankStart();
-	sceGuSwapBuffers();
+	/* tope de 30 fps: se espera solo si el fotograma llego antes de 2 refrescos; el cambio de buffer se hace
+	 * en el siguiente refresco (sin cortes) y mientras tanto la CPU sigue con la logica del juego */
+	{
+		static unsigned int sLastV = 0;
+		while (sceDisplayGetVcount() - sLastV < 2) sceDisplayWaitVblankStart();
+		sceGuSwapBuffers();
+		sLastV = gSwapV = sceDisplayGetVcount();
+	}
 	gFrameOpen = false;
+#ifdef PSP_MEMLOG
+	{
+		uint64_t t2 = sceKernelGetSystemTimeWide();
+		gAccDraw += t0 - gTBegin; gAccSync += t1 - t0; gAccWait += t2 - t1; gAccTotal += t2 - gTLastSwap; gTLastSwap = t2;
+		if (sFrames % 120 == 0) {
+			FILE *f = fopen("mem.log", "a");
+			if (f) { fprintf(f, "TIEMPO fps=%.1f dibujo=%.1fms gpu=%.1fms espera=%.1fms resto=%.1fms\n", 120e6 / gAccTotal, gAccDraw / 120e3, gAccSync / 120e3, gAccWait / 120e3, (gAccTotal - gAccDraw - gAccSync - gAccWait) / 120e3); fclose(f); }
+			gAccDraw = gAccSync = gAccWait = gAccTotal = 0;
+		}
+	}
+#endif
 }
 
 /* ---- texturas ---- */
@@ -217,6 +260,25 @@ static void Upload(const void *pixels, int w, int h, GLenum format, GLenum type)
 	gTexBytes += bytes - oldBytes;
 	free(old);
 }
+/* cache de texturas (GLInterface.cpp): leer y poner los datos ya convertidos de una textura */
+bool PspTexGetRaw(GLuint id, int *ow, int *oh, int *w, int *h, int *psm, const void **data, int *bytes)
+{
+	if (id <= 0 || id >= MAX_TEX || !gTex[id].data) return false;
+	const Tex &t = gTex[id];
+	*ow = t.ow; *oh = t.oh; *w = t.w; *h = t.h; *psm = t.psm; *data = t.data; *bytes = t.bytes;
+	return true;
+}
+void *PspTexAlloc(int bytes) { return memalign(16, bytes); }
+void PspTexSetRaw(GLuint id, int ow, int oh, int w, int h, int psm, void *data, int bytes)
+{
+	if (id <= 0 || id >= MAX_TEX) { free(data); return; }
+	Tex &t = gTex[id];
+	sceKernelDcacheWritebackRange(data, bytes);
+	void *old = t.data; int oldBytes = old ? t.bytes : 0;
+	t.ow = ow; t.oh = oh; t.w = w; t.h = h; t.psm = psm; t.bytes = bytes; t.data = data;
+	gTexBytes += bytes - oldBytes;
+	free(old);
+}
 static void psp_glTexImage2D(GLenum, GLint, GLint, GLsizei w, GLsizei h, GLint, GLenum format, GLenum type, const void *pixels) { Upload(pixels, w, h, format, type); }
 static void psp_glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei w, GLsizei h, GLenum format, GLenum type, const void *pixels) { Upload(pixels, w, h, format, type); }
 
@@ -274,7 +336,7 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 		/* coordenadas logicas -> ndc con la matriz ortografica -> pixeles de la PSP */
 		float nx = gMtx[0] * v[i].sx + gMtx[4] * v[i].sy + gMtx[12];
 		float ny = gMtx[1] * v[i].sx + gMtx[5] * v[i].sy + gMtx[13];
-		out[i].x = ((nx + 1) * 0.5f * gVp[2] + gVp[0]) * sx;
+		out[i].x = ((nx + 1) * 0.5f * gVp[2] + gVp[0]) * sx + gOffX;
 		out[i].y = ((1 - ny) * 0.5f * gVp[3] + gVp[1]) * sy - gCamY;
 		out[i].z = 0;
 		out[i].color = v[i].color;

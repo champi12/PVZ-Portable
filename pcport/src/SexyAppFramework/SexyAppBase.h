@@ -144,6 +144,13 @@ enum
 	UPDATESTATE_PROCESS_DONE
 };
 
+#ifdef __PSP__
+// cache de texturas de la PSP (GLInterface::PspSaveTextureCache / PspLoadTextureCache)
+class GLImage;
+std::string PspImageCacheKey(const std::string& theFileName, const std::string& theVariant, uint32_t theAlphaColor = 0xFFFFFF);
+void PspSaveImageCache(GLImage* theImage, const std::string& theKey);
+#endif
+
 class SexyAppBase : public ButtonListener, public DialogListener
 {
 public:

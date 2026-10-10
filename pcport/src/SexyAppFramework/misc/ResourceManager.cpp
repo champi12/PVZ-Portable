@@ -695,7 +695,11 @@ bool ResourceManager::DoLoadImage(ImageRes *theRes)
 	if (aGLImage == nullptr)
 		return Fail(std::format("Failed to load image: {}", theRes->mPath));
 
+#ifdef __PSP__
+	if (isNew && !aGLImage->mPspFromCache)
+#else
 	if (isNew)
+#endif
 	{
 		if (!theRes->mAlphaImage.empty())
 		{
@@ -749,6 +753,8 @@ bool ResourceManager::DoLoadImage(ImageRes *theRes)
 	// PSP: la textura se crea ya (reducida, 16 bits) y se borra la copia en memoria normal
 	aGLImage->mPurgeBits = true;
 	if (mApp->mGLInterface) mApp->mGLInterface->CreateImageTexture(aGLImage);
+	if (isNew)
+		PspSaveImageCache(aGLImage, PspImageCacheKey(theRes->mPath, theRes->mVariant, theRes->mAlphaColor));
 #endif
 	if (aGLImage->mPurgeBits)
 		aGLImage->PurgeBits();

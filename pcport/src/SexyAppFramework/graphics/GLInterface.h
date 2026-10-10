@@ -236,6 +236,10 @@ public:
 	void					Flush();
 
 	bool					CreateImageTexture(MemoryImage* theImage);
+#ifdef __PSP__
+	bool					PspSaveTextureCache(MemoryImage* theImage, const std::string& theKey);
+	GLImage*				PspLoadTextureCache(const std::string& theKey);
+#endif
 	bool					RecoverBits(MemoryImage* theImage);
 	void					Blt(Image* theImage, float theX, float theY, const Rect& theSrcRect, const Color& theColor, int theDrawMode, bool linearFilter = true);
 	void					BltClipF(Image* theImage, float theX, float theY, const Rect& theSrcRect, const Rect *theClipRect, const Color& theColor, int theDrawMode, bool linearFilter = true);

@@ -79,6 +79,9 @@ void PspMemReport(const char *where);
 #include "widget/Checkbox.h"
 #include "widget/Dialog.h"
 #include "SexyAppFramework/resource.h"
+#ifdef __PSP__
+#include "sound/SDLSoundManager.h"
+#endif
 
 bool gIsPartnerBuild = false;
 bool gSlowMo = false;
@@ -1718,6 +1721,10 @@ void LawnApp::LoadingThreadProc()
 
 	GetNumPreloadingTasks();
 	LoadGroup("LoadingSounds", 54);
+#ifdef __PSP__
+	// los sonidos cortos ya decodificados (~0,6 MB), sin tirones al sonar
+	static_cast<SDLSoundManager*>(mSoundManager.get())->PspPreloadShortSounds(12000);
+#endif
 	PSP_MEM("sonidos");
 }
 

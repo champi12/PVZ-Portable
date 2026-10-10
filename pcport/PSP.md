@@ -17,9 +17,14 @@ Copia `EBOOT.PBP` a `ms0:/PSP/GAME/PVZPC/` y, en la misma carpeta, los datos de 
 ## Cambios para la PSP
 - `psp/gl_gu.cpp`: las ~40 funciones de OpenGL ES 2 que usa `GLInterface.cpp`, hechas con sceGu (sin shaders).
   Texturas a mitad de resolución y en 16 bits; lectura de texturas para lo que dibuja por software.
-- `platform/psp/`: ventana (sceGu) y controles: cursor con stick o cruceta (R = rápido), X = clic,
-  O = clic derecho, START = menú, SELECT = pausa. La pantalla de 800x600 se ve a 0,6 (480x360) y la vista
-  sube y baja con el cursor.
+- `platform/psp/`: ventana (sceGu) y controles: cursor con el stick (R = rápido), X = clic, O = clic derecho,
+  START = menú, CUADRADO = pausa, SELECT = zoom. La pantalla de 800x600 se ve entera (escala 272/600) o, con
+  zoom, a 0,6 con la vista siguiendo al cursor. En un nivel, como en consola: la cruceta salta por casillas,
+  L/R eligen sobre, TRIÁNGULO = pala y los soles se recogen al pasar por encima.
+- Velocidad: CPU a 333 MHz, tope de 30 fps sin esperar al refresco si el fotograma va tarde, constantes en
+  coma flotante simple (`-fsingle-precision-constant`).
+- Caché en la carpeta de datos (`cache32/`): animaciones compiladas, texturas ya reducidas (`tex/`) y sonidos
+  decodificados (`snd22050_1/`). La primera carga las crea; las siguientes tardan menos de la mitad.
 - `LOW_MEMORY`, sin atlas de animaciones, imágenes sin copia en memoria normal tras crear su textura,
   sonido a 22 kHz mono, `int32_t` como `int` (newlib de la PSP usa `long`).
 - `ResourceManager.cpp`: los recursos que solo tiene la GOTY no detienen el juego con los datos 1.0.

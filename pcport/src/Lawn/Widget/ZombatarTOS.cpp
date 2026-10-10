@@ -213,7 +213,7 @@ void ZombatarTOS::MouseWheel(int theDelta)
 	int aMaxScroll = std::max(0, mTextHeight - TOS_CLIP_HEIGHT);
 	int aOffset = static_cast<int>(mTOSSlider->mVal * aMaxScroll);
 	aOffset -= theDelta * 12;
-	mTOSSlider->SetValue(std::max(0.0, std::min(1.0, static_cast<double>(aOffset) / aMaxScroll)));
+	mTOSSlider->SetValue(std::max<double>(0.0, std::min<double>(1.0, static_cast<double>(aOffset) / aMaxScroll)));
 }
 
 void ZombatarTOS::CheckboxChecked(int theId, bool checked)

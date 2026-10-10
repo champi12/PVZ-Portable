@@ -40,6 +40,9 @@ protected:
 
 public:
 	GLInterface*			mGLInterface;
+#ifdef __PSP__
+	bool					mPspFromCache = false;   // texturas leidas de la cache: ya sin pixeles ni alfa por aplicar
+#endif
 
 public:
 	void					FillScanLinesWithCoverage(Span* theSpans, int theSpanCount, const Color& theColor, int theDrawMode, const uint8_t* theCoverage, int theCoverX, int theCoverY, int theCoverWidth, int theCoverHeight) override;

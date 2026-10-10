@@ -68,7 +68,7 @@ NewOptionsDialog::NewOptionsDialog(LawnApp* theApp, bool theFromGameSelector) :
 
 	mMusicVolumeSlider = std::make_unique<Slider>(IMAGE_OPTIONS_SLIDERSLOT, IMAGE_OPTIONS_SLIDERKNOB2, NewOptionsDialog::NewOptionsDialog_MusicVolume, this);
 	double aMusicVolume = theApp->GetMusicVolume();
-	aMusicVolume = std::max(0.0, std::min(1.0, aMusicVolume));
+	aMusicVolume = std::max<double>(0.0, std::min<double>(1.0, aMusicVolume));
 	mMusicVolumeSlider->SetValue(aMusicVolume);
 
 	mSfxVolumeSlider = std::make_unique<Slider>(IMAGE_OPTIONS_SLIDERSLOT, IMAGE_OPTIONS_SLIDERKNOB2, NewOptionsDialog::NewOptionsDialog_SoundVolume, this);

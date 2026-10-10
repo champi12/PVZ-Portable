@@ -1002,7 +1002,7 @@ double SexyAppBase::GetLoadingThreadProgress()
 		return 0.0;
 	if (mNumLoadingThreadTasks == 0)
 		return 0.0;
-	return std::min(mCompletedLoadingThreadTasks / static_cast<double>(mNumLoadingThreadTasks), 1.0);
+	return std::min<double>(mCompletedLoadingThreadTasks / static_cast<double>(mNumLoadingThreadTasks), 1.0);
 }
 
 bool SexyAppBase::RegistryWrite(const std::string& theValueName, uint32_t theType, const uchar* theValue, uint32_t theLength)
@@ -2345,7 +2345,7 @@ void SexyAppBase::StartCursorThread()
 
 void SexyAppBase::SwitchScreenMode(bool wantWindowed, bool is3d, bool force)
 {
-#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__)
+#if defined(__IPHONEOS__) || (defined(__ANDROID__) && !defined(__TERMUX__)) || defined(__SWITCH__) || defined(__PSP__)
 	// Mobile/console platforms are always fullscreen; skip mode switching entirely.
 	Set3DAcclerated(is3d);
 	return;
@@ -2501,7 +2501,7 @@ void SexyAppBase::UpdateFTimeAcc()
 	{
 		int aDeltaTime = aCurTime - mLastTimeCheck;
 
-		mUpdateFTimeAcc = std::min(mUpdateFTimeAcc + aDeltaTime, 200.0);
+		mUpdateFTimeAcc = std::min<double>(mUpdateFTimeAcc + aDeltaTime, 200.0);
 
 		if (mRelaxUpdateBacklogCount > 0)
 			mRelaxUpdateBacklogCount = std::max(mRelaxUpdateBacklogCount - aDeltaTime, 0);
@@ -2705,7 +2705,7 @@ bool SexyAppBase::Process(bool allowSleep)
 			//  too much to keep our timing tending toward occuring right after
 			//  redraws
 			if (isVSynched)
-				mUpdateFTimeAcc = std::max(mUpdateFTimeAcc - aFrameFTime - 0.2f, 0.0);
+				mUpdateFTimeAcc = std::max<double>(mUpdateFTimeAcc - aFrameFTime - 0.2f, 0.0);
 			else
 				mUpdateFTimeAcc -= aFrameFTime;
 
@@ -4183,6 +4183,24 @@ SharedImageRef SexyAppBase::SetSharedImage(const std::string& theFileName, const
 	return aSharedImageRef;
 }
 
+#ifdef __PSP__
+std::string Sexy::PspImageCacheKey(const std::string& theFileName, const std::string& theVariant, uint32_t theAlphaColor)
+{
+	std::string aKey = theFileName;
+	if (!theVariant.empty())
+		aKey += "#" + theVariant;
+	if ((theAlphaColor & 0xFFFFFF) != 0xFFFFFF)
+		aKey += std::format("#{:06X}", theAlphaColor & 0xFFFFFF);
+	return aKey;
+}
+
+void Sexy::PspSaveImageCache(GLImage* theImage, const std::string& theKey)
+{
+	if (theImage && !theImage->mPspFromCache && theImage->mGLInterface)
+		theImage->mGLInterface->PspSaveTextureCache(theImage, theKey);
+}
+#endif
+
 SharedImageRef SexyAppBase::GetSharedImage(const std::string& theFileName, const std::string& theVariant, bool* isNew)
 {
 	std::string anUpperFileName = StringToUpper(theFileName);
@@ -4209,7 +4227,18 @@ SharedImageRef SexyAppBase::GetSharedImage(const std::string& theFileName, const
 		if ((theFileName.length() > 0) && (theFileName[0] == '!'))
 			aSharedImageRef.mSharedImage->mImage = new GLImage(mGLInterface.get());
 		else
+		{
+#ifdef __PSP__
+			GLImage* aCached = mGLInterface ? mGLInterface->PspLoadTextureCache(PspImageCacheKey(theFileName, theVariant, ImageLib::gAlphaComposeColor)) : nullptr;
+			if (aCached)
+			{
+				aCached->mPspFromCache = true;
+				aSharedImageRef.mSharedImage->mImage = aCached;
+			}
+			else
+#endif
 			aSharedImageRef.mSharedImage->mImage = GetImage(theFileName,false);
+		}
 	}
 
 	return aSharedImageRef;
