@@ -78,11 +78,65 @@ for k, i in enumerate(NEWPK):
     im = Image.open(os.path.join(timg, '%03d.png' % i)).convert('RGBA').resize((47, 33), Image.LANCZOS)
     if COSTS[k]: bx = cost_box(COSTS[k], gb, bb); im.paste(bx, (47 - bx.width, 33 - bx.height))
     put(1360 + k, im)
+# --- sobre de la espadana dibujado de nuevo al estilo del J2ME (el del Tencent reducido se ve mal):
+# marco y degradado de cielo/cesped de un sobre del J2ME, la planta en primer plano (su animacion del Tencent,
+# frame de reposo, a resolucion nativa) y el coste con los digitos de pixel del J2ME
+import math
+TCJ = json.load(open(trj))
+def render_tc(n, frame):
+    r = TCJ[n]; W = 240; c = Image.new('RGBA', (W, W), (0, 0, 0, 0))
+    for tr in r['tracks']:
+        g, x, y, sx, sy, kx, ky, img = tr[min(frame, len(tr) - 1)]
+        if g == -1 or img < 0: continue
+        sx = (sx or 4096) / 4096; sy = (sy or 4096) / 4096
+        ax = -kx * math.pi / 180 / 4096; ay = -ky * math.pi / 180 / 4096
+        ma, mb, mc, md = math.cos(ax) * sx, -math.sin(ax) * sx, math.sin(ay) * sy, math.cos(ay) * sy
+        det = ma * md - mc * mb
+        if abs(det) < 1e-6: continue
+        ia, ib, ic, id_ = md / det, -mc / det, -mb / det, ma / det
+        tx, ty = x / 4096 + 80, y / 4096 + 80
+        src = Image.open(os.path.join(timg, '%03d.png' % img)).convert('RGBA')
+        c.alpha_composite(src.transform((W, W), Image.AFFINE, (ia, ib, -ia * tx - ib * ty, ic, id_, -ic * tx - id_ * ty), resample=Image.BICUBIC))
+    return c.crop(c.getbbox())
+def j2me_packet(base_id, grad_id, plant, w, h, pw, dx, dy, fw=4):
+    """marco del sobre base_id; fondo = degradado de la columna 4 del sobre grad_id (la maceta deja ver el cielo
+    y el cesped); la planta escalada a pw px de ancho, abajo y algo cortada por el marco, como en el J2ME"""
+    base = Image.open(os.path.join(out, '%03d.png' % base_id)).convert('RGBA')
+    grad = Image.open(os.path.join(out, '%03d.png' % grad_id)).convert('RGBA')
+    x0, y0, x1, y1 = fw, fw, w - 1 - fw, h - 1 - fw   # interior (el marco ocupa fw px)
+    pk = base.copy(); px = pk.load()
+    bp = base.load()
+    for y in range(h):                               # marco limpio: la mitad derecha es la izquierda reflejada
+        for x in range(w // 2, w):
+            if y < y0 or x > x1: px[x, y] = bp[w - 1 - x, y]
+    gh = grad.height
+    for y in range(y0, y1 + 1):
+        col = grad.getpixel((4, min(gh - 6, max(4, round(4 + (y - y0) * (gh - 10) / max(1, y1 - y0))))))
+        for x in range(x0, x1 + 1):
+            k = 1 - 0.06 * abs((x - x0) / max(1, x1 - x0) - 0.5)     # un poco mas claro en el centro
+            px[x, y] = tuple(min(255, round(c * k + (1 - k) * 255)) for c in col[:3]) + (255,)
+    sc = pw / plant.width
+    pl = plant.resize((round(plant.width * sc), round(plant.height * sc)), Image.LANCZOS)
+    layer = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    layer.paste(pl, (round((w - pl.width) / 2 + dx), round(y1 + 1 - pl.height + dy)), pl)
+    mask = Image.new('L', (w, h), 0); mask.paste(255, (x0, y0, x1 + 1, y1 + 1))
+    layer.putalpha(Image.composite(layer.getchannel('A'), Image.new('L', (w, h), 0), mask))
+    pk.alpha_composite(layer)
+    return pk
+CATTAIL = 3
+cat = render_tc(24, 7)
+print('espadana', cat.size)
+pk = j2me_packet(195, 362, cat, 47, 33, 38, -3, -3)
+bx = cost_box('225', gb, bb); pk.paste(bx, (47 - bx.width, 33 - bx.height))
+meta[:] = [m for m in meta if m['id'] != 1360 + CATTAIL]; put(1360 + CATTAIL, pk)
 fill(1380)
 gs, bs = boxes([620 + 18, 620 + 1, 620 + 30, 620 + 5, 620 + 0, 620 + 23, 620 + 4], ['325', '50', '300', '175', '100', '125', '25'], 21, 12)
 for k, i in enumerate(NEWPK):
     im = Image.open(os.path.join(timg, '%03d.png' % i)).convert('RGBA').crop((3, 3, 65, 47)).resize((38, 28), Image.LANCZOS)
     if COSTS[k]: bx = cost_box(COSTS[k], gs, bs); im.paste(bx, (38 - bx.width, 28 - bx.height))
+    if k == CATTAIL:
+        im = j2me_packet(647, 362, cat, 38, 28, 31, -3, -2, 3)
+        bx = cost_box('225', gs, bs); im.paste(bx, (38 - bx.width, 28 - bx.height))
     put(1380 + k, im)
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
