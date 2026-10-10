@@ -17,13 +17,18 @@ Copia `EBOOT.PBP` a `ms0:/PSP/GAME/PVZPC/` y, en la misma carpeta, los datos de 
 ## Cambios para la PSP
 - `psp/gl_gu.cpp`: las ~40 funciones de OpenGL ES 2 que usa `GLInterface.cpp`, hechas con sceGu (sin shaders).
   Texturas a mitad de resolución y en 16 bits; lectura de texturas para lo que dibuja por software.
-- `platform/psp/`: ventana (sceGu) y controles: cursor con el stick (R = rápido), X = clic, O = clic derecho,
-  START = menú, CUADRADO = pausa, SELECT = zoom. La pantalla de 800x600 se ve entera (escala 272/600) o, con
-  zoom, a 0,6 con la vista siguiendo al cursor. En un nivel, como en consola: la cruceta salta por casillas,
-  L/R eligen sobre, TRIÁNGULO = pala y los soles se recogen al pasar por encima.
+- `platform/psp/`: ventana (sceGu) y controles como en las versiones de consola, sin cursor de ratón: la
+  cruceta o el stick mueven una selección entre lo que se puede pulsar (`Nav.cpp`: botones, casillas, sobres
+  del selector de plantas, almanaque, tienda) y X lo pulsa; O = volver, START = menú, CUADRADO = pausa,
+  SELECT = vista (16:9 estirada, 4:3 con bandas o zoom). En un nivel la selección va por casillas, L/R eligen
+  sobre, TRIÁNGULO = pala y los soles se recogen al pasar por encima.
 - Velocidad: CPU a 333 MHz, tope de 30 fps sin esperar al refresco si el fotograma va tarde, constantes en
-  coma flotante simple (`-fsingle-precision-constant`).
-- Caché en la carpeta de datos (`cache32/`): animaciones compiladas, texturas ya reducidas (`tex/`) y sonidos
+  coma flotante simple (`-fsingle-precision-constant`), estado de la GU sin repetir (textura y mezcla), la mitad
+  de partículas, como mucho 4 actualizaciones entre dibujos (si la PSP no llega el juego se ralentiza en vez de
+  caer a pocos fps) y el hilo de carga con menos prioridad. Contador de fps y actualizaciones en pantalla.
+- Guardado: en `savedata/` junto al EBOOT; el usuario actual y el progreso se guardan en cuanto cambian, porque
+  con HOME el juego no llega a cerrarse ordenadamente.
+- Caché en `savedata/cache32/`: animaciones compiladas, texturas ya reducidas (`tex/`) y sonidos
   decodificados (`snd22050_1/`). La primera carga las crea; las siguientes tardan menos de la mitad.
 - `LOW_MEMORY`, sin atlas de animaciones, imágenes sin copia en memoria normal tras crear su textura,
   sonido a 22 kHz mono, `int32_t` como `int` (newlib de la PSP usa `long`).

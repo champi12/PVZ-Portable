@@ -1071,6 +1071,9 @@ bool LawnApp::KillNewOptionsDialog()
 	bool wantWindowed = !aNewOptionsDialog->mFullscreenCheckbox->IsChecked();
 	bool want3D = aNewOptionsDialog->mHardwareAccelerationCheckbox->IsChecked();
 	SwitchScreenMode(wantWindowed, want3D, false);
+#ifdef __PSP__
+	WriteToRegistry();   // volumen y demas opciones: en la PSP no hay cierre ordenado
+#endif
 
 	KillDialog(Dialogs::DIALOG_NEWOPTIONS);
 	ClearUpdateBacklog();
@@ -1559,6 +1562,28 @@ void LawnApp::UpdatePlayTimeStats()
 
 void LawnApp::UpdateFrames()
 {
+#ifdef __PSP__
+	// PSP: se sale con HOME y el juego no llega a guardar al cerrarse: el usuario actual y su progreso se
+	// guardan en cuanto cambian (y el progreso tambien cada minuto)
+	{
+		static std::string sSavedUser;
+		static int sTick = 0;
+		static bool sHadBoard = false;
+		bool aLeftLevel = sHadBoard && mBoard == nullptr;   // al salir de un nivel (ganado o no) se guarda ya
+		sHadBoard = mBoard != nullptr;
+		if (mPlayerInfo && (mPlayerInfo->mName != sSavedUser || aLeftLevel || ++sTick >= 6000))
+		{
+			sTick = 0;
+			if (mPlayerInfo->mName != sSavedUser)
+			{
+				sSavedUser = mPlayerInfo->mName;
+				RegistryWriteString("CurUser", mPlayerInfo->mName);
+			}
+			if (mBoard == nullptr)
+				mPlayerInfo->SaveDetails();
+		}
+	}
+#endif
 	if ((!mActive || mMinimized) && mBoard)
 	{
 		mBoard->ResetFPSStats();

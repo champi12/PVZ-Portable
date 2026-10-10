@@ -65,6 +65,10 @@
 #include "graphics/MemoryImage.h"
 #include "widget/Dialog.h"
 #include "imagelib/ImageLib.h"
+#ifdef __PSP__
+#include <pspthreadman.h>
+#include <unistd.h>
+#endif
 #include "sound/SDLSoundManager.h"
 #include "sound/SDLSoundInstance.h"
 #include "misc/Rect.h"
@@ -1666,9 +1670,15 @@ void SexyAppBase::DoUpdateFramesF(float theFrac)
 		mWidgetManager->UpdateFrameF(theFrac);
 }
 
+#ifdef __PSP__
+extern volatile int gPspLogicUpdates;   // psp/gl_gu.cpp: contador de fps en pantalla
+#endif
 bool SexyAppBase::DoUpdateFrames()
 {
 	SEXY_AUTO_PERF("SexyAppBase::DoUpdateFrames");
+#ifdef __PSP__
+	gPspLogicUpdates++;
+#endif
 
 	if (gScreenSaverActive)
 		return false;
@@ -2309,6 +2319,11 @@ void SexyAppBase::LoadingThreadProcStub(SexyAppBase *theArg)
 {
 	SexyAppBase* aSexyApp = theArg;
 
+#ifdef __PSP__
+	// PSP: los hilos de igual prioridad no se reparten la CPU; con menos prioridad la carga usa el tiempo
+	// libre y la pantalla de carga sigue a 30 fps
+	sceKernelChangeThreadPriority(0, 48);
+#endif
 	aSexyApp->LoadingThreadProc();
 
 	Sexy::LogInfoLn("Resource Loading Time: {}", (SDL_GetTicks() - aSexyApp->mTimeLoaded));
@@ -2501,7 +2516,11 @@ void SexyAppBase::UpdateFTimeAcc()
 	{
 		int aDeltaTime = aCurTime - mLastTimeCheck;
 
+#ifdef __PSP__
+		mUpdateFTimeAcc = std::min<double>(mUpdateFTimeAcc + aDeltaTime, 40.0);   // sin recuperar mas de 40 ms de retraso
+#else
 		mUpdateFTimeAcc = std::min<double>(mUpdateFTimeAcc + aDeltaTime, 200.0);
+#endif
 
 		if (mRelaxUpdateBacklogCount > 0)
 			mRelaxUpdateBacklogCount = std::max(mRelaxUpdateBacklogCount - aDeltaTime, 0);
@@ -2622,7 +2641,13 @@ bool SexyAppBase::Process(bool allowSleep)
 
 		if (mUpdateAppState == UPDATESTATE_PROCESS_1)
 		{
+#ifdef __PSP__
+			// PSP: como mucho 4 actualizaciones (40 ms de juego) entre dibujos; si la PSP no llega, el juego va
+			// algo mas lento en vez de bajar a pocos fotogramas por segundo
+			if ((++mNonDrawCount < 4) || (!mLoaded))
+#else
 			if ((++mNonDrawCount < static_cast<int>(ceil(10 * mUpdateMultiplier))) || (!mLoaded))
+#endif
 			{
 				bool doUpdate = false;
 
@@ -2749,7 +2774,11 @@ bool SexyAppBase::Process(bool allowSleep)
 			}
 		}
 
+#ifdef __PSP__
+		if (false)   // PSP: el hilo de carga tiene menos prioridad y usa la espera del refresco; dormir aqui bajaba los fps
+#else
 		if (mYieldMainThread)
+#endif
 		{
 			// This is to make sure that the title screen doesn't take up any more than
 			// 1/3 of the processor time
@@ -3407,6 +3436,13 @@ void SexyAppBase::Init()
 #elif defined(__EMSCRIPTEN__)
 	{
 		SetAppDataFolder("/saves/");
+	}
+#elif defined(__PSP__)
+	{
+		// PSP: los datos guardados junto al EBOOT (ms0:/PSP/GAME/...); SDL daria umd0:, que en la PSP es el UMD
+		char aCwd[256];
+		if (getcwd(aCwd, sizeof(aCwd)))
+			SetAppDataFolder(std::string(aCwd) + "/savedata/");
 	}
 #elif !defined(__SWITCH__)
 	{

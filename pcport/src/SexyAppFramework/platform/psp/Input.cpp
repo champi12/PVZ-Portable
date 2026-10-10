@@ -1,8 +1,9 @@
 /*
- * PSP: cursor virtual con el stick o la cruceta. X = clic, O = clic derecho, START = ESC (menu),
- * CUADRADO = espacio (pausa), SELECT = zoom (la pantalla entera o a escala 0.6 siguiendo al cursor), R = rapido.
- * En un nivel, como en las versiones de consola: la cruceta salta de casilla en casilla, L/R eligen sobre,
- * TRIANGULO = pala y los soles y monedas se recogen al pasar el cursor por encima.
+ * PSP: control como en las versiones de consola, sin cursor de raton. La cruceta o el stick mueven la seleccion
+ * entre lo que se puede pulsar (Nav.cpp) y X lo pulsa; O vuelve (ESC), START = menu, CUADRADO = pausa,
+ * SELECT = vista (16:9, 4:3 o zoom). En un nivel la seleccion va de casilla en casilla, L/R eligen sobre,
+ * TRIANGULO = pala, O suelta la planta y los soles y monedas se recogen al pasar por encima.
+ * Si una pantalla no tiene nada que elegir, queda un cursor libre como antes.
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 #include <pspctrl.h>
@@ -23,9 +24,12 @@
 #include "Lawn/SeedPacket.h"
 #include "Lawn/Coin.h"
 #include "Lawn/CursorObject.h"
+#include "widget/Slider.h"
+#include "widget/SliderListener.h"
+#include "Nav.h"
+#include <vector>
 #ifdef PSP_TEST_OPTIONS
 #include "Lawn/Widget/NewOptionsDialog.h"
-#include "widget/Slider.h"
 #include "widget/Checkbox.h"
 #endif
 
@@ -103,39 +107,54 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 		static const char *sNext = PSP_AUTOPAD; static int sDown = 0; static unsigned sMask = 0; static int sBase = -1;
 		int ms = (int)(sceKernelGetSystemTimeWide() / 1000), f, n; unsigned m;
 		if (sBase < 0 && inLevel) sBase = ms;   /* los segundos cuentan desde que se puede jugar */
+		int msAbs = ms;   /* tiempos de 1000 o mas: segundos desde el arranque (+1000) */
 		ms = sBase < 0 ? -1000000 : ms - sBase;
 		if (*sNext && sscanf(sNext, "%d:%x%n", &f, &m, &n) == 2) {
+			if (f >= 1000) { f -= 1000; ms = msAbs; }
 			if (!sDown && ms >= f * 1000) { sDown = ms; sMask = m; FILE *lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "PAD %x\n", m); fclose(lf); } }
 			else if (sDown && ms >= sDown + 100) { sDown = 0; sMask = 0; sNext += n; if (*sNext == ';') sNext++; }
 		}
 		b |= sMask; down = b & ~gPrev; up = gPrev & ~b;
 	}
 #endif
-	unsigned int moveB = b;
 	auto clickAt = [&](int cx, int cy, int btn) {
 		int ox = (int)gCurX, oy = (int)gCurY;
 		mWidgetManager->MouseMove(cx, cy); mWidgetManager->MouseDown(cx, cy, btn); mWidgetManager->MouseUp(cx, cy, btn);
 		mWidgetManager->MouseMove(ox, oy);
 	};
+	uint64_t now = sceKernelGetSystemTimeWide();
+
+	/* direcciones: cruceta o stick, con repeticion (0,3 s y luego cada 0,12 s) */
+	unsigned int dirs = b & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT | PSP_CTRL_UP | PSP_CTRL_DOWN);
+	if (ax < -0.6f) dirs |= PSP_CTRL_LEFT;
+	if (ax > 0.6f) dirs |= PSP_CTRL_RIGHT;
+	if (ay < -0.6f) dirs |= PSP_CTRL_UP;
+	if (ay > 0.6f) dirs |= PSP_CTRL_DOWN;
+	static unsigned int sPrevDirs = 0;
+	unsigned int newDirs = dirs & ~sPrevDirs;
+	bool step = newDirs != 0;
+	if (newDirs) sHoldT = now;
+	else if (dirs && now - sHoldT > 300000) { step = true; sHoldT = now - 180000; }
+	sPrevDirs = dirs;
+	int dirX = step ? ((dirs & PSP_CTRL_RIGHT) ? 1 : (dirs & PSP_CTRL_LEFT) ? -1 : 0) : 0;
+	int dirY = step ? ((dirs & PSP_CTRL_DOWN) ? 1 : (dirs & PSP_CTRL_UP) ? -1 : 0) : 0;
+	if (step) mLastUserInputTick = mLastTimerTime;
+
+	static std::vector<NavTarget> sTargets;
+	bool navMode = false;
+	Rect focus(0, 0, 0, 0);
 	if (inLevel) {
-		unsigned int dirs = b & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT | PSP_CTRL_UP | PSP_CTRL_DOWN);
-		uint64_t t = sceKernelGetSystemTimeWide();
-		bool step = (down & dirs) != 0;
-		if (dirs && !step && t - sHoldT > 300000) { step = true; sHoldT = t - 180000; }   /* repeticion: 0,3 s y luego cada 0,12 s */
-		if (down & dirs) sHoldT = t;
-		if (step) {
-			int rows = bd->StageHas6Rows() ? 6 : 5;
-			if (b & PSP_CTRL_LEFT) sGX--;
-			if (b & PSP_CTRL_RIGHT) sGX++;
-			if (b & PSP_CTRL_UP) sGY--;
-			if (b & PSP_CTRL_DOWN) sGY++;
-			sGX = std::clamp(sGX, 0, 8); sGY = std::clamp(sGY, 0, rows - 1);
-			gCurX = bd->mX + bd->GridToPixelX(sGX, sGY) + 40;
-			gCurY = bd->mY + bd->GridToPixelY(sGX, sGY) + 45;
-			mLastUserInputTick = mLastTimerTime;
-			mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
+		/* nivel: la seleccion salta de casilla en casilla */
+		int rows = bd->StageHas6Rows() ? 6 : 5;
+		if (dirX || dirY) {
+			sGX = std::clamp(sGX + dirX, 0, 8); sGY = std::clamp(sGY + dirY, 0, rows - 1);
 		}
-		moveB &= ~dirs;   /* la cruceta no mueve el cursor libre */
+		int cx0 = bd->mX + bd->GridToPixelX(sGX, sGY), cy0 = bd->mY + bd->GridToPixelY(sGX, sGY);
+		int ch = bd->StageHas6Rows() ? 85 : 100;
+		focus = Rect(cx0, cy0, 80, ch);
+		float nx = cx0 + 40, ny = cy0 + ch / 2;
+		if (nx != gCurX || ny != gCurY) { gCurX = nx; gCurY = ny; mWidgetManager->MouseMove((int)gCurX, (int)gCurY); }
+		navMode = true;
 		SeedBank *bank = bd->mSeedBank.get();
 		if (bank && bank->mNumPackets > 0 && (down & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
 			static int sSeed = -1;
@@ -161,35 +180,64 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 			HitResult hr;
 			if (c->MouseHitTest(lx, ly, &hr)) c->MouseDown(lx, ly, 1);
 		}
-	}
-
-	/* velocidad por tiempo (no por llamada): 60 pasos por segundo */
-	static uint64_t sLast = 0;
-	uint64_t now = sceKernelGetSystemTimeWide();
-	float k = sLast ? std::min((now - sLast) / 16667.0f, 4.0f) : 1.0f;
-	sLast = now;
-	float sp = ((!inLevel && (b & PSP_CTRL_RTRIGGER)) ? 14 : 8) * k, dp = 6 * k;
-	float dx = ax * sp, dy = ay * sp;
-	if (moveB & PSP_CTRL_LEFT) dx -= dp;
-	if (moveB & PSP_CTRL_RIGHT) dx += dp;
-	if (moveB & PSP_CTRL_UP) dy -= dp;
-	if (moveB & PSP_CTRL_DOWN) dy += dp;
-	if (dx != 0 || dy != 0)
-	{
-		gCurX = std::clamp(gCurX + dx, 0.0f, (float)mWidth - 1);
-		gCurY = std::clamp(gCurY + dy, 0.0f, (float)mHeight - 1);
-		mLastUserInputTick = mLastTimerTime;
-		mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
-		if (inLevel) {   /* la cruceta sigue desde la casilla donde quedo el stick */
-			sGX = std::clamp(bd->PixelToGridXKeepOnBoard((int)gCurX - bd->mX, (int)gCurY - bd->mY), 0, 8);
-			sGY = std::clamp(bd->PixelToGridYKeepOnBoard((int)gCurX - bd->mX, (int)gCurY - bd->mY), 0, bd->StageHas6Rows() ? 5 : 4);
+		/* X con las manos vacias recoge el premio del final del nivel, este donde este */
+		if ((down & PSP_CTRL_CROSS) && bd->mCursorObject->mCursorType == CursorType::CURSOR_TYPE_NORMAL) {
+			for (Coin *c : bd->mCoins) {
+				if (!c->IsLevelAward() || c->mIsBeingCollected) continue;
+				c->MouseDown(0, 0, 1);
+				down &= ~PSP_CTRL_CROSS; up &= ~PSP_CTRL_CROSS;
+				break;
+			}
+		}
+	} else {
+		/* menus y pantallas: la seleccion salta entre lo que se puede pulsar */
+		PspNavCollect(app, sTargets);
+		if (!sTargets.empty()) {
+			navMode = true;
+			static void *sScreen = nullptr;
+			void *scr = PspNavScreen(app);
+			int cur = scr != sScreen ? PspNavDefault(app, sTargets) : PspNavPick(sTargets, gCurX, gCurY, 0, 0);
+			sScreen = scr;
+			Slider *sl = cur >= 0 ? dynamic_cast<Slider *>(sTargets[cur].mWidget) : nullptr;
+			if (sl && dirX && sl->mListener) {
+				double v = std::clamp<double>(sl->mVal + dirX * 0.1, 0.0, 1.0);
+				sl->SetValue(v);
+				sl->mListener->SliderVal(sl->mId, v);
+			} else if (dirX || dirY) {
+				const Rect &r = sTargets[cur].mRect;
+				int nx = PspNavPick(sTargets, r.mX + r.mWidth * 0.5f, r.mY + r.mHeight * 0.5f, dirX, dirY);
+				if (nx >= 0) cur = nx;
+			}
+			focus = sTargets[cur].mRect;
+			float cx = focus.mX + focus.mWidth * 0.5f, cy = focus.mY + focus.mHeight * 0.5f;
+			if (cx != gCurX || cy != gCurY) { gCurX = cx; gCurY = cy; mWidgetManager->MouseMove((int)gCurX, (int)gCurY); }
 		}
 	}
+	if (!navMode) {
+		/* pantalla sin nada que elegir (o especial): cursor libre con el stick o la cruceta */
+		static uint64_t sLast = 0;
+		float k = sLast ? std::min((now - sLast) / 16667.0f, 4.0f) : 1.0f;
+		sLast = now;
+		float sp = ((b & PSP_CTRL_RTRIGGER) ? 14 : 8) * k, dp = 6 * k;
+		float dx = ax * sp, dy = ay * sp;
+		if (b & PSP_CTRL_LEFT) dx -= dp;
+		if (b & PSP_CTRL_RIGHT) dx += dp;
+		if (b & PSP_CTRL_UP) dy -= dp;
+		if (b & PSP_CTRL_DOWN) dy += dp;
+		if (dx != 0 || dy != 0) {
+			gCurX = std::clamp(gCurX + dx, 0.0f, (float)mWidth - 1);
+			gCurY = std::clamp(gCurY + dy, 0.0f, (float)mHeight - 1);
+			mLastUserInputTick = mLastTimerTime;
+			mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
+		}
+	}
+	/* en las presentaciones de un nivel no hay nada que elegir ni cursor que mostrar */
+	PspSetFocus(navMode || bd != nullptr, focus.mX, focus.mY, focus.mWidth, focus.mHeight);
 	gPspCursorX = (int)gCurX; gPspCursorY = (int)gCurY;
 
 	/* la vista sigue al cursor: 600 logicos a 0.6 = 360, se ven 272 */
-	if ((down & PSP_CTRL_SELECT) || (!inLevel && (down & PSP_CTRL_LTRIGGER))) PspSetZoom(!PspGetZoom());
-	if (PspGetZoom())
+	if (down & PSP_CTRL_SELECT) PspSetViewMode(PspGetViewMode() + 1);
+	if (PspGetViewMode() == 2)
 	{
 		float target = std::clamp(gCurY * 0.6f - 136.0f, 0.0f, 360.0f - 272.0f);
 		PspSetCameraY(PspGetCameraY() + (target - PspGetCameraY()) * 0.25f);
@@ -230,8 +278,14 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 	int x = (int)gCurX, y = (int)gCurY;
 	if (down & PSP_CTRL_CROSS) { mLastUserInputTick = mLastTimerTime; mWidgetManager->MouseDown(x, y, 1); }
 	if (up & PSP_CTRL_CROSS) mWidgetManager->MouseUp(x, y, 1);
-	if (down & PSP_CTRL_CIRCLE) { mLastUserInputTick = mLastTimerTime; mWidgetManager->MouseDown(x, y, -1); }
-	if (up & PSP_CTRL_CIRCLE) mWidgetManager->MouseUp(x, y, -1);
+	/* O: en un nivel suelta la planta o la pala; fuera, volver (como ESC) */
+	if (inLevel) {
+		if (down & PSP_CTRL_CIRCLE) { mLastUserInputTick = mLastTimerTime; mWidgetManager->MouseDown(x, y, -1); }
+		if (up & PSP_CTRL_CIRCLE) mWidgetManager->MouseUp(x, y, -1);
+	} else {
+		if (down & PSP_CTRL_CIRCLE) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
+		if (up & PSP_CTRL_CIRCLE) mWidgetManager->KeyUp(KEYCODE_ESCAPE);
+	}
 	if (down & PSP_CTRL_START) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
 	if (up & PSP_CTRL_START) mWidgetManager->KeyUp(KEYCODE_ESCAPE);
 	if (down & PSP_CTRL_SQUARE) mWidgetManager->KeyDown(KEYCODE_SPACE);

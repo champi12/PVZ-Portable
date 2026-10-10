@@ -22,6 +22,7 @@
 #ifndef __ZOMBATARWIDGET_H__
 #define __ZOMBATARWIDGET_H__
 
+#include <vector>
 #include "widget/Widget.h"
 #include "widget/ButtonListener.h"
 #include "../System/Zombatar.h"
@@ -119,6 +120,10 @@ public:
 	void						ButtonMouseEnter(int) override {}
 	void						ButtonMouseLeave(int) override {}
 	void						ButtonMouseMove(int, int, int) override {}
+
+#ifdef __PSP__
+	void						PspNavTargets(std::vector<Sexy::Rect>& theRects) const;   // control de consola (platform/psp/Nav.cpp)
+#endif
 
 private:
 	void						DrawMainBackground(Graphics* g);

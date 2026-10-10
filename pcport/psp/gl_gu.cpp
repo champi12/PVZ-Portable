@@ -32,8 +32,9 @@ static unsigned int __attribute__((aligned(64))) gList[512 * 1024];   /* 2 MB de
 static bool gFrameOpen = false;
 static volatile int gSwaps = 0, gUploads = 0, gDraws = 0;
 volatile int gPspWhereLine = 0, gPspCalls = 0; volatile const char *gPspWhereFile = "";
-static float gScale = 272.0f / 600.0f, gCamY = 0, gOffX = (480 - 800 * 272.0f / 600.0f) / 2;
-static bool gZoom = false;
+/* modo de vista: 0 = 16:9 (800x600 estirado a 480x272), 1 = 4:3 con bandas, 2 = zoom 0.6 siguiendo al cursor */
+static int gViewMode = 0;
+static float gScaleX = 0.6f, gScaleY = 272.0f / 600.0f, gCamY = 0, gOffX = 0;
 
 struct Tex { int ow = 0, oh = 0, w = 0, h = 0, psm = GU_PSM_8888, filter = GU_NEAREST, wrap = GU_CLAMP; void *data = nullptr; int bytes = 0; };
 #define MAX_TEX 16384
@@ -49,20 +50,25 @@ static GLenum gBlendS = GL_SRC_ALPHA, gBlendD = GL_ONE_MINUS_SRC_ALPHA;
 static std::vector<unsigned char> gVbo;
 static unsigned int gClear = 0xFF000000;
 
-void PspSetCameraY(float y) { gCamY = gZoom ? y : 0; }
-void PspSetZoom(bool zoom)
+void PspSetCameraY(float y) { gCamY = gViewMode == 2 ? y : 0; }
+void PspSetViewMode(int mode)
 {
-	gZoom = zoom;
-	gScale = zoom ? 0.6f : 272.0f / 600.0f;
-	gOffX = zoom ? 0 : (480 - 800 * gScale) / 2;
-	if (!zoom) gCamY = 0;
+	gViewMode = mode % 3;
+	gScaleX = gViewMode == 1 ? 272.0f / 600.0f : 0.6f;
+	gScaleY = gViewMode == 2 ? 0.6f : 272.0f / 600.0f;
+	gOffX = gViewMode == 1 ? (480 - 800 * gScaleX) / 2 : 0;
+	if (gViewMode != 2) gCamY = 0;
 }
-bool PspGetZoom() { return gZoom; }
+int PspGetViewMode() { return gViewMode; }
 float PspGetCameraY() { return gCamY; }
 
 #ifdef PSP_MEMLOG
 static uint64_t gTBegin, gTLastSwap, gAccDraw, gAccSync, gAccWait, gAccTotal;
 #endif
+/* estado de la GU ya enviado en esta lista (se olvida al empezar cada lista) */
+static const void *gLastTexData = nullptr;
+static int gLastPsm = -1, gLastFilter = -1, gLastWrap = -1, gLastTexOn = -1, gLastBlend = -1;
+static void ForgetGuState() { gLastTexData = nullptr; gLastPsm = gLastFilter = gLastWrap = gLastTexOn = gLastBlend = -1; }
 static unsigned int gSwapV = 0;   /* refresco en el que se pidio el ultimo cambio de buffer */
 static void FrameBegin()
 {
@@ -73,6 +79,7 @@ static void FrameBegin()
 	gTBegin = sceKernelGetSystemTimeWide();
 #endif
 	sceGuStart(GU_DIRECT, gList);
+	ForgetGuState();
 	gFrameOpen = true;
 }
 
@@ -101,10 +108,34 @@ void PspGuInit()
 }
 
 extern int gPspCursorX, gPspCursorY;
+/* seleccion (control de consola): marco amarillo que late alrededor de lo elegido; sin ella, flecha */
+static bool gFocusOn = false;
+static int gFocus[4];
+void PspSetFocus(bool on, int x, int y, int w, int h) { gFocusOn = on; gFocus[0] = x; gFocus[1] = y; gFocus[2] = w; gFocus[3] = h; }
+static void DrawFocus()
+{
+	if (gFocus[2] <= 0 || gFocus[3] <= 0) return;
+	float x0 = gFocus[0] * gScaleX + gOffX, y0 = gFocus[1] * gScaleY - gCamY;
+	float x1 = (gFocus[0] + gFocus[2]) * gScaleX + gOffX, y1 = (gFocus[1] + gFocus[3]) * gScaleY - gCamY;
+	float t = (sceKernelGetSystemTimeLow() % 1000000) / 1000000.0f;
+	unsigned a = 160 + (unsigned)(95 * fabsf(1 - 2 * t));
+	uint32_t c = (a << 24) | 0x0030E0FF;   /* amarillo */
+	struct V { uint32_t c; float x, y, z; };
+	V *v = (V *)sceGuGetMemory(8 * sizeof(V));
+	const float k = 2;
+	v[0] = { c, x0 - k, y0 - k, 0 }; v[1] = { c, x1 + k, y0, 0 };        /* arriba */
+	v[2] = { c, x0 - k, y1, 0 };     v[3] = { c, x1 + k, y1 + k, 0 };    /* abajo */
+	v[4] = { c, x0 - k, y0, 0 };     v[5] = { c, x0, y1, 0 };            /* izquierda */
+	v[6] = { c, x1, y0, 0 };         v[7] = { c, x1 + k, y1, 0 };        /* derecha */
+	sceGuDisable(GU_TEXTURE_2D);
+	sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+	sceGuDrawArray(GU_SPRITES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 8, 0, v);
+}
 static void DrawCursor()
 {
+	if (gFocusOn) { DrawFocus(); return; }
 	/* flecha blanca con borde negro en la posicion del cursor virtual */
-	float x = gPspCursorX * gScale + gOffX, y = gPspCursorY * gScale - gCamY;
+	float x = gPspCursorX * gScaleX + gOffX, y = gPspCursorY * gScaleY - gCamY;
 	struct V { uint32_t c; float x, y, z; };
 	V *v = (V *)sceGuGetMemory(6 * sizeof(V));
 	v[0] = { 0xFF000000, x - 1, y - 2, 0 }; v[1] = { 0xFF000000, x - 1, y + 14, 0 }; v[2] = { 0xFF000000, x + 11, y + 11, 0 };
@@ -112,6 +143,44 @@ static void DrawCursor()
 	sceGuDisable(GU_TEXTURE_2D);
 	sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
 	sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 6, 0, v);
+}
+
+/* contador de fps real (arriba a la izquierda): fotogramas dibujados y actualizaciones de la logica del
+ * juego por segundo (el juego va a 100 por segundo; si baja, el juego va lento) */
+volatile int gPspLogicUpdates = 0;
+static void DrawFpsCounter()
+{
+	static uint64_t sT0 = 0; static int sFrames = 0, sFps = 0, sUps = 0, sU0 = 0;
+	uint64_t now = sceKernelGetSystemTimeWide();
+	sFrames++;
+	if (!sT0) { sT0 = now; sU0 = gPspLogicUpdates; }
+	if (now - sT0 >= 1000000) {
+		sFps = (int)((sFrames * 1000000ull + (now - sT0) / 2) / (now - sT0));
+		sUps = (int)(((gPspLogicUpdates - sU0) * 1000000ull + (now - sT0) / 2) / (now - sT0));
+		sT0 = now; sFrames = 0; sU0 = gPspLogicUpdates;
+	}
+	/* letras de 3x5 */
+	static const unsigned short font[] = {
+		0x7B6F, 0x2C97, 0x73E7, 0x73CF, 0x5BC9, 0x79CF, 0x79EF, 0x7249, 0x7BEF, 0x7BCF,   /* 0-9 */
+		0x79E4, 0x7BE4, 0x79CF, 0x4927 };                                                    /* F P S L */
+	char txt[24]; snprintf(txt, sizeof(txt), "FPS%3d L%3d", sFps, sUps);
+	struct V { uint32_t c; float x, y, z; };
+	int n = 0; for (const char *p = txt; *p; p++) n++;
+	V *v = (V *)sceGuGetMemory((2 + n * 15 * 2) * sizeof(V));
+	int k = 0;
+	v[k++] = { 0xA0000000, 2, 2, 0 }; v[k++] = { 0xA0000000, 4.0f + n * 8, 16, 0 };
+	for (int i = 0; i < n; i++) {
+		char c = txt[i]; int g = c >= '0' && c <= '9' ? c - '0' : c == 'F' ? 10 : c == 'P' ? 11 : c == 'S' ? 12 : c == 'L' ? 13 : -1;
+		if (g < 0) continue;
+		for (int b = 0; b < 15; b++) if (font[g] & (0x4000 >> b)) {
+			float x = 4 + i * 8 + (b % 3) * 2, y = 4 + (b / 3) * 2;
+			uint32_t col = sFps >= 25 ? 0xFF40FF40 : sFps >= 15 ? 0xFF40FFFF : 0xFF4040FF;
+			v[k++] = { col, x, y, 0 }; v[k++] = { col, x + 2, y + 2, 0 };
+		}
+	}
+	sceGuDisable(GU_TEXTURE_2D);
+	sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+	sceGuDrawArray(GU_SPRITES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, k, 0, v);
 }
 
 void PspMemReport(const char *where)
@@ -142,6 +211,7 @@ void PspSwap()
 	if (++sFrames % 120 == 0) PspMemReport("frame");
 	FrameBegin();
 	DrawCursor();
+	DrawFpsCounter();
 #ifdef PSP_MEMLOG
 	uint64_t t0 = sceKernelGetSystemTimeWide();
 #endif
@@ -259,6 +329,7 @@ static void Upload(const void *pixels, int w, int h, GLenum format, GLenum type)
 	t.ow = w; t.oh = h; t.w = dw; t.h = dh; t.psm = psm; t.bytes = bytes; t.data = d;
 	gTexBytes += bytes - oldBytes;
 	free(old);
+	ForgetGuState();   /* la memoria nueva podria caer en la misma direccion que la vieja */
 }
 /* cache de texturas (GLInterface.cpp): leer y poner los datos ya convertidos de una textura */
 bool PspTexGetRaw(GLuint id, int *ow, int *oh, int *w, int *h, int *psm, const void **data, int *bytes)
@@ -278,6 +349,7 @@ void PspTexSetRaw(GLuint id, int ow, int oh, int w, int h, int psm, void *data, 
 	t.ow = ow; t.oh = oh; t.w = w; t.h = h; t.psm = psm; t.bytes = bytes; t.data = data;
 	gTexBytes += bytes - oldBytes;
 	free(old);
+	ForgetGuState();   /* la memoria nueva podria caer en la misma direccion que la vieja */
 }
 static void psp_glTexImage2D(GLenum, GLint, GLint, GLsizei w, GLsizei h, GLint, GLenum format, GLenum type, const void *pixels) { Upload(pixels, w, h, format, type); }
 static void psp_glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei w, GLsizei h, GLenum format, GLenum type, const void *pixels) { Upload(pixels, w, h, format, type); }
@@ -327,11 +399,11 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 	if (n <= 0) return;
 	gDraws++;
 	if (sceGuCheckList() > (int)sizeof(gList) - 256 * 1024 - n * (int)sizeof(GuV)) {   /* lista casi llena: se envia y se sigue */
-		sceGuFinish(); sceGuSync(0, 0); sceGuStart(GU_DIRECT, gList);
+		sceGuFinish(); sceGuSync(0, 0); sceGuStart(GU_DIRECT, gList); ForgetGuState();
 	}
 	GuV *out = (GuV *)sceGuGetMemory(n * sizeof(GuV));
 	Tex *t = gUniform[3] && gBoundTex > 0 && gBoundTex < MAX_TEX && gTex[gBoundTex].data ? &gTex[gBoundTex] : nullptr;
-	float sx = gScale * 800.0f / gVp[2], sy = gScale * 600.0f / gVp[3];
+	float sx = gScaleX * 800.0f / gVp[2], sy = gScaleY * 600.0f / gVp[3];
 	for (int i = 0; i < n; i++) {
 		/* coordenadas logicas -> ndc con la matriz ortografica -> pixeles de la PSP */
 		float nx = gMtx[0] * v[i].sx + gMtx[4] * v[i].sy + gMtx[12];
@@ -343,15 +415,20 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 		out[i].u = t ? v[i].tu * t->w : 0;
 		out[i].v = t ? v[i].tv * t->h : 0;
 	}
+	/* solo se manda a la GU lo que cambia: muchas piezas seguidas usan la misma textura y mezcla */
 	if (t) {
-		sceGuEnable(GU_TEXTURE_2D);
-		sceGuTexMode(t->psm, 0, 0, 0);
-		sceGuTexImage(0, t->w, t->h, t->w, t->data);
-		sceGuTexFilter(t->filter, t->filter);
-		sceGuTexWrap(t->wrap, t->wrap);
-		sceGuTexFlush();
-	} else sceGuDisable(GU_TEXTURE_2D);
-	SetBlend(additive);
+		if (gLastTexOn != 1) { sceGuEnable(GU_TEXTURE_2D); gLastTexOn = 1; }
+		if (gLastTexData != t->data || gLastPsm != t->psm) {
+			sceGuTexMode(t->psm, 0, 0, 0);
+			sceGuTexImage(0, t->w, t->h, t->w, t->data);
+			sceGuTexFlush();
+			gLastTexData = t->data; gLastPsm = t->psm;
+		}
+		if (gLastFilter != t->filter) { sceGuTexFilter(t->filter, t->filter); gLastFilter = t->filter; }
+		if (gLastWrap != t->wrap) { sceGuTexWrap(t->wrap, t->wrap); gLastWrap = t->wrap; }
+	} else if (gLastTexOn != 0) { sceGuDisable(GU_TEXTURE_2D); gLastTexOn = 0; }
+	int blend = (additive || gBlendD == GL_ONE) ? 1 : 0;
+	if (gLastBlend != blend) { SetBlend(additive); gLastBlend = blend; }
 	sceGuDrawArray(prim, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, n, 0, out);
 }
 static void psp_glDrawArrays(GLenum mode, GLint first, GLsizei count)

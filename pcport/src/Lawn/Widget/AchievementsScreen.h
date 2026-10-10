@@ -22,6 +22,7 @@
 #ifndef __ACHIEVEMENTSSCREEN_H__
 #define __ACHIEVEMENTSSCREEN_H__
 
+#include <vector>
 #include "../../ConstEnums.h"
 #include "widget/Widget.h"
 #include <string_view>
@@ -78,6 +79,9 @@ public:
 	void                        Update() override;
 	void                        Draw(Graphics* g) override;
 	void                        KeyDown(KeyCode theKey) override;
+#ifdef __PSP__
+	void                        PspNavTargets(std::vector<Sexy::Rect>& theRects) const;   // control de consola
+#endif
 	void                        MouseDown(int x, int y, int theClickCount) override;
 	void                        MouseUp(int x, int y, int theClickCount) override;
 	void						MouseWheel(int theDelta) override;

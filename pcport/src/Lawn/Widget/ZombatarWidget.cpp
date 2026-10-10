@@ -1548,3 +1548,25 @@ void ZombatarWidget::BackToSelector()
 	if (mWidgetManager)
 		mWidgetManager->SetFocus(mGameSelector);
 }
+
+#ifdef __PSP__
+// control de consola: las pestanas, piezas y colores que se pueden elegir (coordenadas del widget)
+void ZombatarWidget::PspNavTargets(std::vector<Rect>& theRects) const
+{
+	if (mState == ZOMBATAR_STATE_CREATE)
+	{
+		for (int i = 0; i < NUM_ZOMBATAR_PAGES; i++)
+			theRects.push_back(GetCategoryRect(i));
+		for (int i = 0, n = GetSubPageItemCount(); i < n; i++)
+			theRects.push_back(GetItemHitRect(i));
+		if (PageAllowsColors())
+		{
+			int n = mPage == ZOMBATAR_PAGE_SKIN ? ZOMBATAR_SKIN_COLOR_COUNT : ZOMBATAR_PART_COLOR_COUNT;
+			for (int i = 0; i < n; i++)
+				theRects.push_back(GetColorRect(i));
+		}
+	}
+	else if (mState == ZOMBATAR_STATE_LIST && GetHeadCount() > 0)
+		theRects.push_back(Rect(ZOMBATAR_LIST_DELETE_RECT_X, ZOMBATAR_LIST_DELETE_RECT_Y, ZOMBATAR_LIST_DELETE_RECT_WIDTH, ZOMBATAR_LIST_DELETE_RECT_HEIGHT));
+}
+#endif

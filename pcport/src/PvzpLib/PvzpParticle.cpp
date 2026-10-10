@@ -666,19 +666,27 @@ void PvzpParticleEmitter::UpdateSpawning()
 {
 	PvzpParticleEmitter* aCrossFadeEmitter = mParticleSystem->mParticleHolder->mEmitters.DataArrayTryToGet(static_cast<unsigned int>(mCrossFadeEmitterID));
 	PvzpParticleEmitter* aSpawningEmitter = !aCrossFadeEmitter ? this : aCrossFadeEmitter;  // all spawn data is taken from this "primary" emitter
-	mSpawnAccum += aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnRate, ParticleSystemTracks::TRACK_SPAWN_RATE) * 0.01;
+#ifdef __PSP__
+	// PSP: la mitad de particulas (explosiones, cabezas, tierra...): con muchas zombis es lo que mas pesa
+	constexpr float PSP_PARTICLES = 0.5f;
+	auto aHalf = [](int n) { return n > 1 ? (n + 1) / 2 : n; };
+#else
+	constexpr float PSP_PARTICLES = 1.0f;
+	auto aHalf = [](int n) { return n; };
+#endif
+	mSpawnAccum += aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnRate, ParticleSystemTracks::TRACK_SPAWN_RATE) * 0.01 * PSP_PARTICLES;
 	int aSpawnCount = static_cast<int>(mSpawnAccum);
 	mSpawnAccum -= aSpawnCount;
 
-	int aSpawnMinActive = static_cast<int>(aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMinActive, ParticleSystemTracks::TRACK_SPAWN_MIN_ACTIVE));
+	int aSpawnMinActive = aHalf(static_cast<int>(aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMinActive, ParticleSystemTracks::TRACK_SPAWN_MIN_ACTIVE)));
 	if (aSpawnMinActive >= 0 && aSpawnCount < aSpawnMinActive - mParticleList.mSize)
 		aSpawnCount = aSpawnMinActive - mParticleList.mSize;  // spawn at least enough to reach aSpawnMinActive
-	int aSpawnMaxActive = static_cast<int>(aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMaxActive, ParticleSystemTracks::TRACK_SPAWN_MAX_ACTIVE));
+	int aSpawnMaxActive = aHalf(static_cast<int>(aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMaxActive, ParticleSystemTracks::TRACK_SPAWN_MAX_ACTIVE)));
 	if (aSpawnMaxActive >= 0 && aSpawnCount > aSpawnMaxActive - mParticleList.mSize)
 		aSpawnCount = aSpawnMaxActive - mParticleList.mSize;  // cap the active count at aSpawnMaxActive
 	if (FloatTrackIsSet(aSpawningEmitter->mEmitterDef->mSpawnMaxLaunched))
 	{
-		int aSpawnMaxLaunched = aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMaxLaunched, ParticleSystemTracks::TRACK_SPAWN_MAX_LAUNCHED);
+		int aSpawnMaxLaunched = aHalf(static_cast<int>(aSpawningEmitter->SystemTrackEvaluate(aSpawningEmitter->mEmitterDef->mSpawnMaxLaunched, ParticleSystemTracks::TRACK_SPAWN_MAX_LAUNCHED)));
 		if (aSpawnCount > aSpawnMaxLaunched - mParticlesSpawned)
 			aSpawnCount = aSpawnMaxLaunched - mParticlesSpawned;  // cap at the emitter's total launch limit
 	}

@@ -272,3 +272,11 @@ void ReportAchievement::AchievementInitForPlayer(LawnApp* theApp) {
 		GiveAchievement(theApp, AchievementId::Morticulturalist, aGiveAchievement);
 	}
 }
+
+#ifdef __PSP__
+void AchievementsWidget::PspNavTargets(std::vector<Rect>& theRects) const
+{
+	theRects.push_back(aBackButtonRect);
+	theRects.push_back(mMoreRockRect);
+}
+#endif
