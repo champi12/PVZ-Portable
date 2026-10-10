@@ -397,3 +397,10 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Delfín montado 0.07 filas y nadando 0.85; buzo -0.28: centrados en su fila.
 - Guisantralla: cabezas más altas, hojas más grandes y oscuras. Café: hoja más pequeña e inclinada; el grano cae sobre la seta.
 - Bobsled: no está en el jar Tencent ni en el J2ME (tampoco el zomboni, que hace la pista de hielo).
+
+### Port del PvZ de PC (inicio)
+- Base elegida: PvZ-Portable (LGPL, reimplementación de la GOTY). Con los datos 1.0 del usuario hacen falta los
+  conversores `tools/pcport/reanim_decompile.py` y `particle_decompile.py` (143 animaciones y 107 partículas) y
+  un ajuste en el ResourceManager para recursos que solo tiene la GOTY. Arranca hasta la pantalla de título en Linux.
+- Memoria: 1969 imágenes, 43 Mpx (166 MB en RGBA). A x0.6 y 16 bits serían 30 MB en total, pero el juego carga por
+  grupos: posible en PSP-2000/3000 (64 MB); muy justo en la PSP-1000.
