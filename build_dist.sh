@@ -8,3 +8,4 @@ cp EBOOT.PBP $D/
 cp data/gfx.pak data/sfx.pak data/anim.pak $D/data/
 cp data/music/*.mp3 $D/data/music/
 du -sh $D
+rm -f PvZ_PSP_J2ME.zip; (cd dist && zip -qr ../PvZ_PSP_J2ME.zip PSP)   # zip listo para mandar

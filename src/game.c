@@ -229,7 +229,7 @@ void game_update(void)
     if (scene != SC_BOOT) return;
 #else
 #ifdef AT_MINI
-    if (frame == 40) { scene = SC_MINI; mini_sel = AT_MINI; }
+    if (frame == 40) { scene = SC_MINI; mini_sel = AT_MINI; mini_done |= 5; }
     if (frame == 120) { playing_mini = LV_MG_BOWL + AT_MINI; start_board(); }
 #else
     if (scene == SC_TITLE && frame > 40 && !hand_t) { hand_t = 1; }
@@ -574,11 +574,24 @@ static void draw_almanac(void)
     } else if (!alm_detail) {
         if (alm_page == 1) ui_title_bar(42, 15, 396, 595, 158, TXT[29], FONT_BIG);
         else ui_title_bar(42, 15, 396, 96, 7, TXT[30], FONT_BIG);
+        gfx_draw(alm_page == 1 ? 1476 : 1477, 17, 50, WHITE, 0);   /* pergamino de la DS con el girasol / el zombi */
         for (int x = 15; x < 465; x += 23) gfx_draw(506, x, 49, WHITE, 0);
+        /* plantas: 5 filas a la vista; se desplaza con el cursor */
+        static int alm_top;
+        int rows = (alm_n + 6) / 7, crow = alm_cur / 7;
+        if (alm_page != 1 || crow < alm_top) alm_top = alm_page == 1 ? crow : 0;
+        if (crow > alm_top + 4) alm_top = crow - 4;
+        if (alm_page == 1 && rows > 5) {
+            gfx_rect(452, 58, 4, 182, 0x60000000);
+            gfx_rect(452, 58 + 182.0f * alm_top / rows, 4, 182.0f * 5 / rows, 0xFF103060);
+        }
         for (int i = 0; i < alm_n; i++) {
             int t = alm_list[i];
             float x, y, w, h;
-            if (alm_page == 1) { x = 61 + (i % 7) * 51; y = 60 + (i / 7) * 38; w = 47; h = 33; gfx_draw(plant_defs[t].packet, x, y, WHITE, 0); }
+            if (alm_page == 1) {
+                if (i / 7 < alm_top || i / 7 > alm_top + 4) continue;
+                x = 61 + (i % 7) * 51; y = 57 + (i / 7 - alm_top) * 37; w = 47; h = 33; gfx_draw(plant_defs[t].packet, x, y, WHITE, 0);
+            }
             else { x = 67 + (i % 7) * 50; y = 58 + (i / 7) * 47; w = 45; h = 45; gfx_draw(zombie_portrait[t], x, y, WHITE, 0); }
             if (i == alm_cur) ui_cursor(x, y, w, h, frame);
         }
@@ -673,7 +686,7 @@ static void draw_mini(void)
         /* la imagen va detras del marco l61, ajustada a su ventana (x 15-71, y 6-49) */
         gfx_draw_ex(1329 + i, fx + 43, fy + 27.5f, iw / 2, img_h(1329) / 2.0f, 0.8f, 0.8f, 0, WHITE, 0);
         gfx_draw(1341, fx, fy, i == mini_sel ? WHITE : 0xFFB0B0B0, 0);
-        if (mini_done & (1 << i)) gfx_draw(1342, fx + fw - 30, fy - 8, WHITE, 0);   /* trofeo */
+        if (mini_done & (1 << i)) gfx_draw(1342, fx + 7, fy + 2, WHITE, 0);   /* trofeo: esquina de arriba a la izquierda */
         /* el nombre va en la placa gris de abajo del marco, como en el PC */
         text_scale = 0.62f;
         float lh = 11, pw = fw - 14, pcy = fy + 69.5f;

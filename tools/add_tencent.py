@@ -178,6 +178,18 @@ if len(sys.argv) > 8:
         a, acx, acy = assemble(Image.open(gp))
         fill(1475); put(1475, a.resize((round(a.width * 0.42), round(a.height * 0.42)), Image.LANCZOS))
         print('seta melancolica: centro de la cabeza en', round(acx * 0.42, 1), round(acy * 0.42, 1), 'de', a.size)
+    dp = os.path.join(ref, 'ds_menus.webp')
+    if os.path.exists(dp):                     # 1476/1477: pergamino del almanaque de la DS con el girasol y el zombi
+        dim = Image.open(dp).convert('RGBA')
+        fill(1476)
+        for k, x0 in enumerate((1140, 1302)):
+            pg = dim.crop((x0, 272, x0 + 156, 365)).resize((446, 266), Image.LANCZOS)
+            # el trazo es muy tenue: se oscurece la diferencia con el papel (desenfocado) para que se vea
+            from PIL import ImageChops, ImageFilter as IFl
+            paper = pg.filter(IFl.GaussianBlur(8))
+            ink = ImageChops.subtract(paper, pg)
+            pg = ImageChops.subtract(pg, ink.point(lambda v: min(255, v * 2)))
+            put(1476 + k, pg.crop((0, 266 - 212, 446, 266)))
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter
@@ -193,7 +205,7 @@ for y in range(N):
         d = (((x - N / 2) ** 2 + (y - N / 2) ** 2) ** 0.5) / (N / 2)
         f = max(0.0, 1 - d) ** 1.6
         n = (px[x, y] - lo) / max(1, hi - lo)
-        ap[x, y] = int(255 * f * (0.55 + 0.45 * n))
+        ap[x, y] = max(1, int(255 * f * (0.55 + 0.45 * n)))   # nunca 0: el bilineal de la PSP mezcla con negro
 fog = Image.merge('RGBA', (Image.new('L', (N, N), 235), Image.new('L', (N, N), 235), Image.new('L', (N, N), 240), al))
 meta[:] = [m for m in meta if m['id'] != 1390]; have.discard(1390)
 put(1390, fog)

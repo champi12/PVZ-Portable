@@ -368,3 +368,9 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Seta melancólica armada con las piezas de la DS como la del PC (`gloom_parts.assemble`): cuerpo verde y 8 tubos en la imagen 1475, con la cabeza encima.
 - Minijuegos: el título va en la losa; la imagen va detrás del marco l61 ajustada a su ventana, y el nombre en la placa gris (texto a escala 0.62, nuevo `text_scale`).
 - add_tencent: un `fill()` metido antes de otro `put()` duplicaba ids en el meta y desplazaba las imágenes del pak.
+
+### Sesión 16
+- El zip de la sesión 15 no se había regenerado (build_dist no hacía el zip): ahora `build_dist.sh` crea `PvZ_PSP_J2ME.zip`.
+- Niebla: la mancha 1390 nunca tiene alfa 0 (el bilineal de la PSP mezclaba con el negro transparente y salían líneas oscuras).
+- Trofeo de minijuego en la esquina de arriba a la izquierda del marco.
+- Almanaque: fondo de pergamino de la DS con el girasol (plantas, 1476) y el zombi (zombis, 1477), sacados de `ref/ds_menus.webp`. La lista de plantas muestra 5 filas y se desplaza con el cursor (49 plantas ya no caben).
