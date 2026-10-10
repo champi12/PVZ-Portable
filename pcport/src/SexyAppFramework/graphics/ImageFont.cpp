@@ -584,8 +584,10 @@ bool FontData::HandleCommand(const ListDataElement& theParams)
 
 				if ((Image*)anImage != nullptr)
 				{
+#ifndef __PSP__  // PSP: GetSharedImage ya la deja como textura sin copia en memoria
 					if (isNew)
 						anImage->Palletize();
+#endif
 					aLayer->mImage = anImage;
 				}
 				else

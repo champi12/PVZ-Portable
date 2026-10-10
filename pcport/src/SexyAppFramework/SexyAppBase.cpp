@@ -4210,6 +4210,16 @@ SharedImageRef SexyAppBase::GetSharedImage(const std::string& theFileName, const
 			aSharedImageRef.mSharedImage->mImage = new GLImage(mGLInterface.get());
 		else
 			aSharedImageRef.mSharedImage->mImage = GetImage(theFileName,false);
+#ifdef __PSP__
+		// PSP: textura reducida ya y fuera la copia en memoria normal
+		GLImage* aLoaded = aSharedImageRef.mSharedImage->mImage;
+		if (aLoaded != nullptr && theFileName[0] != '!' && mGLInterface != nullptr)
+		{
+			aLoaded->mPurgeBits = true;
+			mGLInterface->CreateImageTexture(aLoaded);
+			aLoaded->PurgeBits();
+		}
+#endif
 	}
 
 	return aSharedImageRef;

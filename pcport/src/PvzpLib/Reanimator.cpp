@@ -1176,6 +1176,9 @@ Reanimation* ReanimationHolder::AllocReanimation(float theX, float theY, int the
 	return aReanim;
 }
 
+#ifdef __PSP__
+void PspMemReport(const char *where);
+#endif
 void ReanimatorEnsureDefinitionLoaded(ReanimationType theReanimType, bool theIsPreloading)
 {
 	PVZP_ASSERT(theReanimType >= 0 && theReanimType < gReanimatorDefCount);
@@ -1207,6 +1210,9 @@ void ReanimatorEnsureDefinitionLoaded(ReanimationType theReanimType, bool theIsP
 	int aDuration = aTimer.GetDuration();
 	if (aDuration > 100)  // report slow reanim loading
 		PvzpLogLn("LOADING:Long reanim '{}' {} ms on {}", aReanimParams->mReanimFileName, aDuration, LawnGetCurrentLevelName());
+#ifdef __PSP__
+	PspMemReport(aReanimParams->mReanimFileName);
+#endif
 }
 
 void ReanimatorLoadDefinitions(const ReanimationParams* theReanimationParamArray, int theReanimationParamArraySize)

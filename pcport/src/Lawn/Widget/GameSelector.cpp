@@ -768,7 +768,11 @@ void GameSelector::Update()
 				mApp->PreNewGame(GameMode::GAMEMODE_CHALLENGE_ICE, false);
 				return;
 			}
+#ifndef __PSP__  // PSP: sin la pelicula de introduccion (precarga demasiado para la memoria)
 			if (mApp->IsFirstTimeAdventureMode() && mLevel == 1 && !mApp->SaveFileExists())
+#else
+			if (false)
+#endif
 			{
 				mApp->PreNewGame(GameMode::GAMEMODE_INTRO, false);
 				return;
