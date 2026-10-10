@@ -96,6 +96,9 @@ static void DrawCursor()
 
 void PspMemReport(const char *where)
 {
+#ifndef PSP_MEMLOG  /* sin -DPSP_MEMLOG solo se anota la falta de memoria */
+	if (strcmp(where, "SIN MEMORIA") != 0) return;
+#endif
 	struct mallinfo mi = mallinfo();
 	FILE *f = fopen("mem.log", "a");
 	if (f) { fprintf(f, "MEM %s: heap usado %d KB (de %d), texturas %ld KB, libre del sistema %d KB\n", where, mi.uordblks / 1024, mi.arena / 1024, gTexBytes / 1024, (int)(sceKernelTotalFreeMemSize() / 1024)); fclose(f); }

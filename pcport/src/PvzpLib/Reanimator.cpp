@@ -1228,6 +1228,9 @@ void ReanimatorLoadDefinitions(const ReanimationParams* theReanimationParamArray
 	{
 		const ReanimationParams* aReanimationParams = &theReanimationParamArray[i];
 		PVZP_ASSERT(aReanimationParams->mReanimationType == i);
+#ifdef __PSP__
+		continue;  // PSP: se cargan al usarse; todas juntas no caben en memoria
+#endif
 		if (DefinitionIsCompiled(aReanimationParams->mReanimFileName))
 			ReanimatorEnsureDefinitionLoaded(aReanimationParams->mReanimationType, true);
 	}

@@ -10,7 +10,9 @@ cambios para la PSP. No contiene ningún recurso del juego.
 Copia `EBOOT.PBP` a `ms0:/PSP/GAME/PVZPC/` y, en la misma carpeta, los datos de tu copia del juego:
 - GOTY: `main.pak` y la carpeta `properties/` (recomendado; incluye logros y Zombatar).
 - PvZ 1.0: las carpetas `data images particles properties reanim sounds compiled`, después de pasar
-  `tools/pcport/reanim_decompile.py` y `particle_decompile.py`.
+  `tools/pcport/reanim_decompile.py` y `particle_decompile.py` (o empaquetadas con `tools/pcport/make_pak.py`).
+- Música: la carpeta `music/` que crea `tools/pcport/render_music.py sounds/mainmusic.mo3 music`
+  (necesita libopenmpt en el PC). Sin ella el juego va sin música.
 
 ## Cambios para la PSP
 - `psp/gl_gu.cpp`: las ~40 funciones de OpenGL ES 2 que usa `GLInterface.cpp`, hechas con sceGu (sin shaders).
@@ -21,7 +23,12 @@ Copia `EBOOT.PBP` a `ms0:/PSP/GAME/PVZPC/` y, en la misma carpeta, los datos de 
 - `LOW_MEMORY`, sin atlas de animaciones, imágenes sin copia en memoria normal tras crear su textura,
   sonido a 22 kHz mono, `int32_t` como `int` (newlib de la PSP usa `long`).
 - `ResourceManager.cpp`: los recursos que solo tiene la GOTY no detienen el juego con los datos 1.0.
+- Música: el `.mo3` decodificado ocupa ~26 MB, así que cada melodía va pre-renderizada en pistas IMA ADPCM
+  (melodía, tambores, platillos) y el códec `SDL-Mixer-X/src/codecs/music_pvzm.c` las mezcla imitando el
+  salto de orden y el volumen por canal que pide `Music.cpp`.
+- Las animaciones se cargan al usarse (no todas al empezar) y sin la película de introducción.
 
 ## Estado
-Arranca: logo de PopCap, pantalla de título y carga de recursos (probado en PPSSPP con los datos 1.0).
-Pendiente: memoria durante la partida, música (.mo3), velocidad, controles más cómodos.
+Probado en PPSSPP con los datos 1.0 (sueltos y en `main.pak`): logo, título, carga, nombre de usuario con el
+teclado de la PSP, menú principal y nivel 1-1 de Aventura jugable (memoria: menú ~18 MB, nivel ~23 MB).
+Pendiente: probar en una PSP real (velocidad), controles más cómodos, resto de niveles y minijuegos.

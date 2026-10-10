@@ -83,6 +83,21 @@ bool Music::PvzpLoadMusic(MusicFile theMusicFile, std::string_view theFileName)
 	if (aDot != std::string::npos)
 		anExt = StringToLower(aFileName.substr(aDot + 1));
 
+#ifdef __PSP__
+	// PSP: el .mo3 no cabe en memoria; se usa la musica pre-renderizada de music/ (codec PVZM de SDL-Mixer-X)
+	if (anExt == "mo3")
+	{
+		static const char aMarker[32] = "PVZDmusic/";
+		aHMusic = Mix_LoadMUS_RW(SDL_RWFromConstMem(aMarker, sizeof(aMarker)), 1);
+		if (aHMusic == 0)
+			return false;
+		SDLMusicInfo aMusicInfo;
+		aMusicInfo.mHMusic = aHMusic;
+		std::scoped_lock anAutoCrit(anSDL->mMusicMapMutex);
+		anSDL->mMusicMap.insert(SDLMusicMap::value_type(theMusicFile, aMusicInfo));
+		return true;
+	}
+#endif
 	PFILE* pFile = p_fopen(aFileName.c_str(), "rb");
 	if (pFile == nullptr)
 		return false;
@@ -191,6 +206,10 @@ void Music::MusicInit()
 {
 	for (const auto& aMusic : MUSIC_LOADING_FILES)
 	{
+#ifdef __PSP__
+		if (aMusic.mMusicFile == MusicFile::MUSIC_FILE_CREDITS_ZOMBIES_ON_YOUR_LAWN)
+			continue;  // PSP: 1,6 MB en memoria; se carga al ver los creditos (MusicCreditScreenInit)
+#endif
 		LoadSong(aMusic.mMusicFile, aMusic.mFileName);
 		mApp->mCompletedLoadingThreadTasks += MUSIC_LOADING_TASK_WEIGHT;
 	}

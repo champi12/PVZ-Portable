@@ -29,6 +29,7 @@
 #include "music_cmd.h"
 #include "music_wav.h"
 #include "music_openmpt.h"
+#include "music_pvzm.h"
 #include "music_modplug.h"
 #include "music_xmp.h"
 #include "music_nativemidi.h"
@@ -614,6 +615,9 @@ static Mix_MusicInterface *s_music_interfaces[] =
 #endif
 #ifdef MUSIC_MOD_OPENMPT
     &Mix_MusicInterface_OPENMPT,
+#endif
+#ifdef MUSIC_PVZM
+    &Mix_MusicInterface_PVZM,
 #endif
 #ifdef MUSIC_MOD_XMP
     &Mix_MusicInterface_XMP,
@@ -1470,6 +1474,12 @@ Mix_MusicType detect_music_type(SDL_RWops *src)
     }
     SDL_RWseek(src, start, RW_SEEK_SET);
     magic[99]       = '\0';
+
+#ifdef MUSIC_PVZM
+    if (SDL_memcmp(magic, "PVZD", 4) == 0) {
+        return MUS_MOD;
+    }
+#endif
 
     /* Drop out some known but not supported file types (Archives, etc.) */
     if (SDL_memcmp(magic, "PK\x03\x04", 3) == 0) {
