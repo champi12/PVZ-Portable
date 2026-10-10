@@ -204,7 +204,7 @@ if len(sys.argv) > 8:
         from splitpea_parts import assemble as sp_assemble
         hd, bd, _ = sp_assemble(Image.open(sp))
         fill(1478)
-        put(1478, hd.resize((45, 20), Image.LANCZOS)); put(1479, bd.resize((30, 23), Image.LANCZOS))
+        put(1478, hd.resize((44, 22), Image.LANCZOS)); put(1479, bd.resize((32, 24), Image.LANCZOS))
     if os.path.exists(dp):
         fill(1480); put(1480, sheet(400, 120, inks[0], 1.3, 2, 120 - 116))
     zp = os.path.join(ref, 'zombi_partes.png')
@@ -230,13 +230,13 @@ if len(sys.argv) > 8:
         frames = []
         bb = heads[0].getbbox(); a0 = heads[0].split()[3].load()
         xs = [x for x in range(bb[0], bb[2]) if a0[x, bb[1] + 2] > 60]; tx = (xs[0] + xs[-1]) // 2      # punta de arriba del grano
-        lf = leaf.transpose(Image.FLIP_LEFT_RIGHT).rotate(12, expand=True, resample=Image.BICUBIC)   # base abajo a la derecha, punta arriba a la izquierda
-        lf = lf.resize((round(lf.width * 0.9), round(lf.height * 0.9)), Image.LANCZOS)
+        lf = leaf.transpose(Image.FLIP_LEFT_RIGHT).rotate(28, expand=True, resample=Image.BICUBIC)   # base abajo a la derecha, punta arriba a la izquierda
+        lf = lf.resize((round(lf.width * 0.7), round(lf.height * 0.7)), Image.LANCZOS)
         for k in range(12):
             f = Image.new('RGBA', (57, 156 + 18)); f.alpha_composite(heads[k], (0, 18))
             if k < 3:                          # la hoja arriba a la izquierda mientras el grano esta entero (como el PC)
                 l2 = lf if k == 0 else lf.point(lambda v: v)
-                f.alpha_composite(l2, (max(0, tx + 6 - l2.width), max(0, bb[1] + 18 + 7 - l2.height)))
+                f.alpha_composite(l2, (max(0, tx + 4 - l2.width), max(0, bb[1] + 18 + 6 - l2.height)))
             frames.append(f.resize((16, 49), Image.LANCZOS))
         seq = [frames[0]] * 10 + frames[1:] + [frames[11]]
         strip = Image.new('RGBA', (16 * len(seq), 49))

@@ -389,3 +389,11 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Grano de café (PL_COFFEE): solo sobre una seta dormida; el grano (1482, tira de 22 frames de la hoja del PC con la hoja arriba) se queda y se deshace, y la seta despierta (instantáneas: explotan). Premio del 5-3 (la guisantralladora pasa al 5-5); sobres 1402/1442.
 - Cinta de los niveles x-10 y bolos: marco y banda del PC (1483/1484) que corre, 10 sobres como el PC.
 - 2-5 "Golpea al zombi": solo el mazo (1485); X da un mazazo en la casilla (normal 1, cono 2, cubo 3); los zombis salen de las tumbas más rápido y salen tumbas nuevas.
+
+### Sesión 19
+- Globo: vuela a 1,1 filas de altura; al reventar cae suave (dy) y anda 5 px más arriba (sus pies en la animación).
+- Cactus: con un globo en su fila se estira (9-11), dispara arriba (12-15 / 16-19) y baja (20-22) al irse; solo sus
+  pinchos de arriba revientan globos.
+- Delfín montado 0.07 filas y nadando 0.85; buzo -0.28: centrados en su fila.
+- Guisantralla: cabezas más altas, hojas más grandes y oscuras. Café: hoja más pequeña e inclinada; el grano cae sobre la seta.
+- Bobsled: no está en el jar Tencent ni en el J2ME (tampoco el zomboni, que hace la pista de hielo).
