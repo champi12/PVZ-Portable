@@ -192,8 +192,12 @@ static void bind_tile(int id, PakTile *t, int linear)
 }
 
 /* Dibuja el rectangulo de imagen (sx,sy,sw,sh) en (x,y) con escala 1. Recorre tiles. */
+float text_scale = 1;   /* escala del texto (1 = tamano real) */
+static float rect_sc = 1;
+
 static void draw_src_rect(int id, int sx, int sy, int sw, int sh, float x, float y, u32 color, int flags)
 {
+    float sc = rect_sc;
     if (id < 0 || id >= pak_count) return;
     if (!images[id].block && img_load(id) != 0) return;
     PakEntry *e = &entries[id];
@@ -207,10 +211,10 @@ static void draw_src_rect(int id, int sx, int sy, int sw, int sh, float x, float
         int x1 = (sx + sw) < (t->x + t->w) ? (sx + sw) : (t->x + t->w);
         int y1 = (sy + sh) < (t->y + t->h) ? (sy + sh) : (t->y + t->h);
         if (x0 >= x1 || y0 >= y1) continue;
-        bind_tile(id, t, vsy != 1.0f);
+        bind_tile(id, t, vsy != 1.0f || sc != 1.0f);
         /* posicion en pantalla (con espejo respecto al rect pedido) */
-        float dx0 = (flags & GFX_FLIPX) ? x + (sx + sw - x1) : x + (x0 - sx);
-        float dy0 = (flags & GFX_FLIPY) ? y + (sy + sh - y1) : y + (y0 - sy);
+        float dx0 = (flags & GFX_FLIPX) ? x + (sx + sw - x1) * sc : x + (x0 - sx) * sc;
+        float dy0 = (flags & GFX_FLIPY) ? y + (sy + sh - y1) * sc : y + (y0 - sy) * sc;
         float u0 = x0 - t->x, u1 = x1 - t->x, v0 = y0 - t->y, v1 = y1 - t->y;
         if (flags & GFX_FLIPX) { float tmp = u0; u0 = u1; u1 = tmp; }
         if (flags & GFX_FLIPY) { float tmp = v0; v0 = v1; v1 = tmp; }
@@ -222,8 +226,8 @@ static void draw_src_rect(int id, int sx, int sy, int sw, int sh, float x, float
             float fu0, fu1;
             if (flags & GFX_FLIPX) { fu0 = u0 - s; fu1 = u0 - s - sl; }
             else { fu0 = u0 + s; fu1 = u0 + s + sl; }
-            v[0].u = fu0; v[0].v = v0; v[0].color = color; v[0].x = dx0 + s; v[0].y = dy0 * vsy; v[0].z = 0;
-            v[1].u = fu1; v[1].v = v1; v[1].color = color; v[1].x = dx0 + s + sl; v[1].y = (dy0 + (y1 - y0)) * vsy; v[1].z = 0;
+            v[0].u = fu0; v[0].v = v0; v[0].color = color; v[0].x = dx0 + s * sc; v[0].y = dy0 * vsy; v[0].z = 0;
+            v[1].u = fu1; v[1].v = v1; v[1].color = color; v[1].x = dx0 + (s + sl) * sc; v[1].y = (dy0 + (y1 - y0) * sc) * vsy; v[1].z = 0;
             sceGuDrawArray(GU_SPRITES, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 2, 0, v);
         }
     }
@@ -348,21 +352,23 @@ int text_width(int font, const char *s)
         int g = glyph_index(f, c);
         w += g >= 0 ? f->glyphs[g * 3 + 2] : 4;
     }
-    return w;
+    return (int)(w * text_scale + 0.5f);
 }
 
 void text_draw(int font, float x, float y, const char *s, u32 color)
 {
     const FontDef *f = &font_defs[font];
-    int px = (int)x;
+    float px = (int)x;
+    rect_sc = text_scale;
     while (*s) {
         int c = utf8_next(&s);
         int g = glyph_index(f, c);
-        if (g < 0) { px += 4; continue; }
+        if (g < 0) { px += 4 * text_scale; continue; }
         int gx = f->glyphs[g * 3], gy = f->glyphs[g * 3 + 1], gw = f->glyphs[g * 3 + 2];
-        draw_src_rect(f->img, gx, gy, gw, f->h, px, (int)y, color, 0);
-        px += gw;
+        draw_src_rect(f->img, gx, gy, gw, f->h, text_scale == 1 ? (int)px : px, (int)y, color, 0);
+        px += gw * text_scale;
     }
+    rect_sc = 1;
 }
 
 void text_draw_centered(int font, float cx, float y, const char *s, u32 color)

@@ -27,3 +27,22 @@ def cut(im, b):
 if __name__ == '__main__':
     im = Image.open(sys.argv[1]); os.makedirs(sys.argv[2], exist_ok=True)
     for k, b in enumerate(BOXES): cut(im, b).save(os.path.join(sys.argv[2], 'g%02d.png' % k))
+
+# Seta melancolica armada como la del PC: cuerpo verde + 8 tubos alrededor (detras de la cabeza).
+# Devuelve (imagen, cx, cy): cx,cy = donde va el centro de la cabeza dentro de la imagen.
+# (pieza, dx, dy, espejo) relativo al centro de la cabeza, en pixeles de la hoja
+TUBES = [(7, -40, 0, 0), (10, -45, 0, 0), (7, 40, 0, 1), (10, 45, 0, 1),            # lados: tramo + boca
+         (6, -32, 24, 0), (9, -38, 29, 0), (6, 32, 24, 1), (9, 38, 29, 1),           # abajo en diagonal
+         (5, 0, 34, 0), (8, 0, 41, 0),                                               # abajo de frente
+         (11, -31, -28, 0), (11, 31, -28, 1), (12, 0, -40, 0)]                       # arriba
+def assemble(im):
+    parts = [cut(im, b) for b in BOXES]
+    W, H, cx, cy = 140, 130, 70, 56
+    out = Image.new('RGBA', (W, H))
+    body = parts[13]
+    out.alpha_composite(body, (cx - body.width // 2, cy + 26))
+    for k, dx, dy, fl in TUBES:
+        p = parts[k].transpose(Image.FLIP_LEFT_RIGHT) if fl else parts[k]
+        out.alpha_composite(p, (cx + dx - p.width // 2, cy + dy - p.height // 2))
+    bb = out.getbbox(); out = out.crop(bb)
+    return out, cx - bb[0], cy - bb[1]

@@ -666,16 +666,22 @@ static void draw_reward(void)
 static void draw_mini(void)
 {
     gfx_draw(1295, 0, 1, WHITE, 0);                /* panel l15 a pantalla completa */
-    text_draw_centered(FONT_BIG, SCREEN_W / 2, 12, XS(XS_MINIGAMES), 0xFF103060);
+    text_draw_centered(FONT_BIG, SCREEN_W / 2, 31, XS(XS_MINIGAMES), 0xFF103060);   /* en la losa de piedra */
     float fw = img_w(1341), iw = img_w(1329), gap = 4, x0 = SCREEN_W / 2 - (MG_COUNT * fw + (MG_COUNT - 1) * gap) / 2;
     for (int i = 0; i < MG_COUNT; i++) {
-        float fx = x0 + i * (fw + gap), fy = 66, x = fx + (fw - iw) / 2, y = fy + 6;
-        gfx_draw(1341, fx, fy, i == mini_sel ? WHITE : 0xFFB0B0B0, 0);   /* marco l61 */
-        gfx_draw(1329 + i, x, y, WHITE, 0);
+        float fx = x0 + i * (fw + gap), fy = 100;
+        /* la imagen va detras del marco l61, ajustada a su ventana (x 15-71, y 6-49) */
+        gfx_draw_ex(1329 + i, fx + 43, fy + 27.5f, iw / 2, img_h(1329) / 2.0f, 0.8f, 0.8f, 0, WHITE, 0);
+        gfx_draw(1341, fx, fy, i == mini_sel ? WHITE : 0xFFB0B0B0, 0);
         if (mini_done & (1 << i)) gfx_draw(1342, fx + fw - 30, fy - 8, WHITE, 0);   /* trofeo */
+        /* el nombre va en la placa gris de abajo del marco, como en el PC */
+        text_scale = 0.62f;
+        float lh = 11, pw = fw - 14, pcy = fy + 69.5f;
+        int nl = ui_text_wrap(FONT_SMALL, 0, 0, pw, lh, XS(XS_MG_BOWL + i), 0, 0);
         ui_wrap_center = 1;
-        ui_text_wrap(FONT_SMALL, fx + fw / 2, fy + img_h(1341) + 4, fw + 2, 15, XS(XS_MG_BOWL + i), i == mini_sel ? 0xFF0050E0 : 0xFF103060, 1);
+        ui_text_wrap(FONT_SMALL, fx + fw / 2, pcy - nl * lh / 2 - 0.5f, pw, lh, XS(XS_MG_BOWL + i), i == mini_sel ? 0xFF0050E0 : 0xFF103060, 1);
         ui_wrap_center = 0;
+        text_scale = 1;
         if (i == mini_sel) {
             gfx_draw(612, fx - 3, fy - 3, WHITE, 0); gfx_draw(612, fx + fw - 10, fy - 3, WHITE, GFX_FLIPX);
             gfx_draw(612, fx - 3, fy + img_h(1341) - 9, WHITE, GFX_FLIPY); gfx_draw(612, fx + fw - 10, fy + img_h(1341) - 9, WHITE, GFX_FLIPX | GFX_FLIPY);

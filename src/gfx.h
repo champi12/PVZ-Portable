@@ -48,6 +48,7 @@ void gfx_noclip(void);
 enum { FONT_SMALL = 8, FONT_MED = 6, FONT_BIG = 5, FONT_HUGE = 7, FONT_NUM = 0 };
 int  font_load(int font);
 int  text_width(int font, const char *utf8);
+extern float text_scale;   /* escala de text_draw/text_width (1 = normal) */
 void text_draw(int font, float x, float y, const char *utf8, u32 color);
 void text_draw_centered(int font, float cx, float y, const char *utf8, u32 color);
 

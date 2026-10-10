@@ -172,6 +172,12 @@ if len(sys.argv) > 8:
     if os.path.exists(sp):
         fill(1474); sim = Image.open(sp).convert('RGBA')
         put(1474, sim.resize((round(sim.width * 0.6), round(sim.height * 0.6)), Image.LANCZOS))   # al tamano de las demas puas
+    gp = os.path.join(ref, 'melancoseta_ds.png')
+    if os.path.exists(gp):                     # 1475: cuerpo y tubos de la seta melancolica armados (piezas DS)
+        from gloom_parts import assemble
+        a, acx, acy = assemble(Image.open(gp))
+        fill(1475); put(1475, a.resize((round(a.width * 0.42), round(a.height * 0.42)), Image.LANCZOS))
+        print('seta melancolica: centro de la cabeza en', round(acx * 0.42, 1), round(acy * 0.42, 1), 'de', a.size)
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter

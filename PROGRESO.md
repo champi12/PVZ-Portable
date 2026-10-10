@@ -361,3 +361,10 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Melonpultas 4 px más atrás; planterna centrada y más alta. Buzo nadando en su fila.
 - Bolos como el PC: cada golpe quita la puerta, el casco o la vida; la nuez rebota en diagonal y no vuelve a golpear
   hasta cambiar de fila; cinta cada 3,3 s.
+
+### Sesión 15 (errores8)
+- Delfín: montado va 0.2 filas más bajo y nadando sin delfín 0.9 (antes 0.55 en ambos casos, demasiado bajo al ir montado).
+- Planterna 4 px más adelante.
+- Seta melancólica armada con las piezas de la DS como la del PC (`gloom_parts.assemble`): cuerpo verde y 8 tubos en la imagen 1475, con la cabeza encima.
+- Minijuegos: el título va en la losa; la imagen va detrás del marco l61 ajustada a su ventana, y el nombre en la placa gris (texto a escala 0.62, nuevo `text_scale`).
+- add_tencent: un `fill()` metido antes de otro `put()` duplicaba ids en el meta y desplazaba las imágenes del pak.

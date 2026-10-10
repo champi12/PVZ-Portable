@@ -2394,24 +2394,27 @@ static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
  * parpadea, duerme de dia y infla los mofletes al echar humo */
 static void draw_gloom(Plant *p, float cx, float base, u32 col)
 {
-    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_BODY = 1473 };
-    float bw = img_w(G_BODY), bh = img_h(G_BODY);
-    float hw = img_w(G_HEAD), hh = img_h(G_HEAD);
+    /* seta melancolica armada con las piezas de la DS como la del PC: 1475 = cuerpo + 8 tubos (centro de la
+     * cabeza en 21.4,21.0), encima la cabeza 1460 o sus variantes al soltar humo y los parpados */
+    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_BASE = 1475 };
+    const float k = 0.8f;                         /* del tamano de las demas plantas */
+    float bw = img_w(G_BASE), bh = img_h(G_BASE);
     float breath = 1 + 0.03f * sinf(frame * 0.07f + cx * 0.1f);
-    hw *= 0.85f; hh *= 0.85f;                    /* del tamano de las demas setas */
-    float hx = cx, hy = base - bh * 0.45f - hh * 0.36f;
+    float top = base + 2 - bh * k;
+    float hx = cx + (21.4f - bw / 2) * k, hy = top + 21.0f * k * breath;
+    float hw = img_w(G_HEAD) * k;
     int head = G_HEAD; float hs = 1;
     if (p->state == 1 && !p->sleeping) {
         int ph = p->aux % 28;
-        if (ph >= 8 && ph < 16) { head = G_PUFF1; hs = 1.25f; } else if (ph >= 16 && ph < 22) { head = G_PUFF2; hs = 1.35f; }
+        if (ph >= 8 && ph < 16) { head = G_PUFF1; hs = 1.08f; } else if (ph >= 16 && ph < 22) { head = G_PUFF2; hs = 1.12f; }
     }
-    gfx_draw_ex(G_BODY, sxw(cx), syw(base - bh / 2 + 1), bw / 2, bh / 2, G.ws, G.ws, 0, col, 0);
-    float sw = hw * hs / img_w(head), sh = hh * hs / img_h(head);
-    if (head != G_HEAD) { sw = hw * hs / img_w(head) * 0.92f; sh = sw; }
-    gfx_draw_ex(head, sxw(hx), syw(hy), img_w(head) / 2.0f, img_h(head) / 2.0f, sw * G.ws, sh * G.ws * breath, 0, col, 0);
+    gfx_draw_ex(G_BASE, sxw(cx), syw(base + 2), bw / 2, bh, k * hs * G.ws, k * (2 - breath) * G.ws, 0, col, 0);
+    float sw = head == G_HEAD ? k : hw / img_w(head) * 1.0f;
+    gfx_draw_ex(head, sxw(hx), syw(hy), img_w(head) / 2.0f, img_h(head) / 2.0f, sw * hs * G.ws, sw * hs * breath * G.ws, 0, col, 0);
     if (head == G_HEAD) {                         /* parpados: dormida (de dia) o parpadeo de vez en cuando */
         int lid = p->sleeping ? G_LID_SHUT : ((frame + (int)cx * 7) % 260 < 10 ? G_LID_HALF : 0);
-        if (lid) gfx_draw_ex(lid, sxw(hx), syw(hy - hh * 0.16f), img_w(lid) / 2.0f, img_h(lid) / 2.0f, hw * 0.78f / img_w(lid) * G.ws, G.ws, 0, col, 0);
+        float hh = img_h(G_HEAD) * k;
+        if (lid) gfx_draw_ex(lid, sxw(hx), syw(hy - hh * 0.16f), img_w(lid) / 2.0f, img_h(lid) / 2.0f, hw * 0.78f / img_w(lid) * G.ws, k * G.ws, 0, col, 0);
     }
 }
 
@@ -2572,7 +2575,7 @@ static void draw_zombie(Zombie *z, float base)
     if (z->state >= ZS_DYING && z->fade < 100) col = (col & 0x00FFFFFF) | ((u32)(z->fade * 255 / 100) << 24);
     if (z->type == ZT_BOSS) return;   /* se dibuja aparte, encima del seto */
     float yo = z->yoff + z->dy + (z->balloon ? -G.rh * 0.6f : 0);
-    if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? 0.55f : z->type == ZT_SNORKEL ? -0.12f : 0.22f);   /* nadando (el buzo ya va bajo en su animacion) */
+    if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? (z->jumped ? 0.9f : 0.2f) : z->type == ZT_SNORKEL ? -0.12f : 0.22f);   /* nadando (el buzo ya va bajo en su animacion) */
     if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
     else if (z->state < ZS_DYING && !z->under && !(z->inwater && z->type == ZT_DOLPHIN)) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped) gfx_noclip(); return; }   /* invisibles: solo su sombra */
@@ -2678,7 +2681,7 @@ void board_draw(void)
                 float dx = p->type == PL_COBCANNON ? G.cw * 0.5f : 0;      /* el mazorcanon ocupa dos casillas */
                 float pdy = 0;
                 if (p->type == PL_MELONPULT || p->type == PL_WINTERMELON) dx -= 4;   /* un poco mas atras */
-                if (p->type == PL_PLANTERN) { dx -= 5; pdy = -4; }         /* sus hojas de la derecha le descentraban la caja */
+                if (p->type == PL_PLANTERN) { dx -= 1; pdy = -4; }         /* sus hojas de la derecha le descentraban la caja */
                 draw_anim_at(&p->anim, cell_x(c) + G.cw / 2 + p->dx + dx, base + yo + p->dy + pdy + (l == 2 ? 2 : 0), p->sleeping ? 0xFFC0C0C0 : WHITE, 0);
                 if (p->ladder) draw_world_c(IMG_LADDER, cell_x(c) + G.cw * 0.85f, base + yo - img_h(IMG_LADDER) / 2.0f + 1, 1, WHITE);   /* apoyada delante */
             }
