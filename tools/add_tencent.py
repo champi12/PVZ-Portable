@@ -3,7 +3,7 @@
    imagenes i0..i50 del Tencent -> ids 700.. (reescaladas x0.75 al tamano del J2ME 480x320)
    imagenes l*.png del Tencent  -> ids 1280+n (l.png = 1280, l37.png = 1317...), tambien x0.75
    animaciones /re del Tencent  -> archivos 52.. de anim.pak (posiciones x0.75, imagenes +700)
-uso: add_tencent.py gfx_dir(J2ME+PvZBV, de make_gfx_dir) reanim_j2me.json tc_imgs/ tc_reanim.json jar_tc/ salida_gfx/ salida_reanim.json
+uso: add_tencent.py gfx_dir(J2ME+PvZBV, de make_gfx_dir) reanim_j2me.json tc_imgs/ tc_reanim.json jar_tc/ salida_gfx/ salida_reanim.json [hoja_sobres_pc.png]
      (tc_imgs y tc_reanim salen de extract_imgs.py / parse_reanim.py con las tablas del Tencent)"""
 import sys, os, json, shutil
 from PIL import Image
@@ -138,6 +138,25 @@ for k, i in enumerate(NEWPK):
         im = j2me_packet(647, 362, cat, 38, 28, 31, -3, -2, 3)
         bx = cost_box('225', gs, bs); im.paste(bx, (38 - bx.width, 28 - bx.height))
     put(1380 + k, im)
+# hoja de sobres del PC (opcional, 8o argumento): sustituye los sobres de las plantas nuevas y anade los de las
+# plantas que aun no estan en el juego (1400+ a 47x33, 1440+ a 38x28; orden de EXTRA)
+if len(sys.argv) > 8:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from seed_sheet import Sheet
+    sh = Sheet(sys.argv[8])
+    NEWCELL = [(5, 0), (5, 4), (5, 7), (5, 3), (3, 3), (3, 1), (4, 4), (3, 6), (6, 1)]   # orden de NEWPK
+    for k, (r, c) in enumerate(NEWCELL):
+        for base, (w, h) in ((1360, (47, 33)), (1380, (38, 28))):
+            meta[:] = [m for m in meta if m['id'] != base + k]; have.discard(base + k)
+            put(base + k, sh.packet(r, c, w, h, COSTS[k]))
+    # guisante partido, seta iman, grano de cafe, hoja paraguas, maravilla, girasol gemelo, seta melancolica,
+    # iman dorado, pinchoroca, imitador, nuez gigante
+    EXTRA = [((3, 4), '125'), ((3, 7), '100'), ((4, 3), '75'), ((4, 5), '100'), ((4, 6), '50'), ((5, 1), '150'),
+             ((5, 2), '150'), ((5, 5), '50'), ((5, 6), '125'), ((6, 0), '0'), ((6, 2), '')]
+    fill(1400)
+    for k, ((r, c), cost) in enumerate(EXTRA): put(1400 + k, sh.packet(r, c, 47, 33, cost))
+    fill(1440)
+    for k, ((r, c), cost) in enumerate(EXTRA): put(1440 + k, sh.packet(r, c, 38, 28, cost))
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter
@@ -155,6 +174,7 @@ for y in range(N):
         n = (px[x, y] - lo) / max(1, hi - lo)
         ap[x, y] = int(255 * f * (0.55 + 0.45 * n))
 fog = Image.merge('RGBA', (Image.new('L', (N, N), 235), Image.new('L', (N, N), 235), Image.new('L', (N, N), 240), al))
+meta[:] = [m for m in meta if m['id'] != 1390]; have.discard(1390)
 put(1390, fog)
 fill(max(have) + 1)
 meta.sort(key=lambda m: m['id'])

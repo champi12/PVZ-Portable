@@ -10,7 +10,7 @@
 #include "fonts_data.h"
 
 #define BUF_W 512
-#define MAX_IMAGES 1400
+#define MAX_IMAGES 1500
 #define MAX_TILES 2
 
 enum { FMT_T8 = 0, FMT_565 = 1, FMT_8888 = 2 };
