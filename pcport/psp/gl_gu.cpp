@@ -10,6 +10,7 @@
 #include <pspdisplay.h>
 #include <pspmoduleinfo.h>
 #include <pspgu.h>
+#include <psputility.h>
 #include <malloc.h>
 #include <pspsysmem.h>
 #include <pspthreadman.h>
@@ -28,6 +29,8 @@ PSP_HEAP_SIZE_KB(-2048);     /* toda la memoria menos 2 MB para hilos */
 #define SCR_H 272
 static unsigned int __attribute__((aligned(64))) gList[512 * 1024];   /* 2 MB de lista de dibujo */
 static bool gFrameOpen = false;
+static volatile int gSwaps = 0, gUploads = 0, gDraws = 0;
+volatile int gPspWhereLine = 0, gPspCalls = 0; volatile const char *gPspWhereFile = "";
 static float gScale = 0.6f, gCamY = 0;
 
 struct Tex { int ow = 0, oh = 0, w = 0, h = 0, psm = GU_PSM_8888, filter = GU_NEAREST, wrap = GU_CLAMP; void *data = nullptr; int bytes = 0; };
@@ -74,6 +77,7 @@ void PspGuInit()
 	sceDisplayWaitVblankStart();
 	sceGuDisplay(GU_TRUE);
 	gFrameOpen = false;
+	void PspStartWatchdog(); PspStartWatchdog();
 }
 
 extern int gPspCursorX, gPspCursorY;
@@ -97,9 +101,21 @@ void PspMemReport(const char *where)
 	if (f) { fprintf(f, "MEM %s: heap usado %d KB, texturas %ld KB, libre del sistema %d KB\n", where, mi.uordblks / 1024, gTexBytes / 1024, (int)(sceKernelTotalFreeMemSize() / 1024)); fclose(f); }
 }
 
+void PspGuFrameForOsk()
+{
+	FrameBegin();
+	sceGuClearColor(0xFF203020); sceGuClear(GU_COLOR_BUFFER_BIT);
+	sceGuFinish(); sceGuSync(0, 0);
+	sceUtilityOskUpdate(1);
+	sceDisplayWaitVblankStart(); sceGuSwapBuffers();
+	gFrameOpen = false; gSwaps++;
+}
+
+void PspStartWatchdog();
 void PspSwap()
 {
 	static int sFrames;
+	gSwaps++;
 	if (++sFrames % 120 == 0) PspMemReport("frame");
 	FrameBegin();
 	DrawCursor();
@@ -152,6 +168,7 @@ static void Upload(const void *pixels, int w, int h, GLenum format, GLenum type)
 {
 	Tex &t = gTex[gBoundTex];
 	(void)format;
+	gUploads++;
 	/* a RGBA 8888 */
 	std::vector<uint32_t> src(w * h);
 	if (!pixels) memset(src.data(), 0, src.size() * 4);
@@ -243,6 +260,10 @@ static void SetBlend(bool additive)
 static void DrawRun(int prim, const GLV *v, int n, bool additive)
 {
 	if (n <= 0) return;
+	gDraws++;
+	if (sceGuCheckList() > (int)sizeof(gList) - 256 * 1024 - n * (int)sizeof(GuV)) {   /* lista casi llena: se envia y se sigue */
+		sceGuFinish(); sceGuSync(0, 0); sceGuStart(GU_DIRECT, gList);
+	}
 	GuV *out = (GuV *)sceGuGetMemory(n * sizeof(GuV));
 	Tex *t = gUniform[3] && gBoundTex > 0 && gBoundTex < MAX_TEX && gTex[gBoundTex].data ? &gTex[gBoundTex] : nullptr;
 	float sx = gScale * 800.0f / gVp[2], sy = gScale * 600.0f / gVp[3];
@@ -339,3 +360,20 @@ void PspGLInit()
 #include <new>
 static void PspOutOfMemory() { PspMemReport("SIN MEMORIA"); std::set_new_handler(nullptr); }
 static struct PspNewHandler { PspNewHandler() { std::set_new_handler(PspOutOfMemory); } } sPspNewHandler;
+
+/* vigilante: si no se dibuja nada en 8 s, anota el ultimo punto de control (PSPW) */
+static int PspWatchdog(SceSize, void *)
+{
+	int last = -1, still = 0;
+	for (;;) {
+		sceKernelDelayThread(2000000);
+		if (gSwaps == last) { if (++still == 4 || still % 15 == 0) { FILE *f = fopen("mem.log", "a"); if (f) { fprintf(f, "COLGADO en %s:%d subidas=%d dibujos=%d llamadas=%d\n", gPspWhereFile, gPspWhereLine, gUploads, gDraws, gPspCalls); fclose(f); } } }
+		else { still = 0; last = gSwaps; }
+	}
+	return 0;
+}
+void PspStartWatchdog()
+{
+	SceUID th = sceKernelCreateThread("vigilante", PspWatchdog, 0x11, 0x4000, PSP_THREAD_ATTR_USER, nullptr);
+	if (th >= 0) sceKernelStartThread(th, 0, nullptr);
+}

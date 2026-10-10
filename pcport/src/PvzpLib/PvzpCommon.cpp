@@ -659,6 +659,11 @@ void PvzpSandImageIfNeeded(Image* theImage)
 {
 	MemoryImage* aImage = (MemoryImage*)theImage;
 	/*if (TestBit(aImage->mRenderFlags, RENDERIMAGEFLAG_SANDING))*/ // UB shift by a billion
+#ifdef __PSP__
+	// PSP: sin "lijado" de bordes (pediria recuperar la imagen entera); la reduccion de texturas ya pondera el alfa
+	aImage->mRenderFlags &= ~RENDERIMAGEFLAG_SANDING;
+	return;
+#endif
 	if (aImage->mRenderFlags & RENDERIMAGEFLAG_SANDING)
 	{
 		FixPixelsOnAlphaEdgeForBlending(theImage);

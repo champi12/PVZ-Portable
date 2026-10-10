@@ -37,6 +37,7 @@
 #include <mutex>
 #include <vector>
 
+
 constexpr const int MAX_VERTICES = 16384;
 
 #ifndef GL_FRAMEBUFFER_SRGB
@@ -824,7 +825,9 @@ void TextureData::Blt(float theX, float theY, const Rect& theSrcRect, const Colo
 		while (srcX < srcRight)
 		{
 			w = srcRight - srcX; h = srcBottom - srcY;
+			if (mTextures.empty()) return;   // sin texturas (fallo al crearlas): nada que dibujar
 			GLuint &tex = GetTexture(srcX, srcY, w, h, u1, v1, u2, v2, uvb);
+			if (w <= 0 || h <= 0) return;    // pieza vacia: evita un bucle infinito
 			float x = dstX, y = dstY;
 
 			GLVertex v[4] = {
@@ -973,7 +976,9 @@ void TextureData::BltTransformed(const SexyMatrix3 &theTrans, const Rect& theSrc
 		while (srcX < srcRight)
 		{
 			w = srcRight - srcX; h = srcBottom - srcY;
+			if (mTextures.empty()) return;   // sin texturas (fallo al crearlas): nada que dibujar
 			GLuint &tex = GetTexture(srcX, srcY, w, h, u1, v1, u2, v2, uvb);
+			if (w <= 0 || h <= 0) return;    // pieza vacia: evita un bucle infinito
 
 			float x = dstX, y = dstY;
 			SexyVector2 p[4] = { {x, y}, {x, y+h}, {x+w, y}, {x+w, y+h} };

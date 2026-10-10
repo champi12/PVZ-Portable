@@ -181,7 +181,11 @@ class GLInterface : public NativeDisplay
 public:
 	SexyAppBase*			mApp;
 
+#ifdef __PSP__
+	std::recursive_mutex	mCritSect;   // PSP: las texturas se crean al cargar, a veces con el cerrojo tomado
+#else
 	std::mutex				mCritSect;
+#endif
 	int						mWidth;
 	int						mHeight;
 	int						mDisplayWidth;

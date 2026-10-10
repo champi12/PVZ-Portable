@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 #include <pspctrl.h>
+#include <psputility.h>
+#include <string.h>
 #include <stdio.h>
 #include <SDL.h>
 #include <psprtc.h>
@@ -19,6 +21,7 @@ using namespace Sexy;
 
 static float gCurX = 400, gCurY = 300;
 static unsigned int gPrev = 0;
+static int gAutoEnter = 0;   /* pruebas: Intro tras escribir el nombre */
 int gPspCursorX = 400, gPspCursorY = 300;   /* gl_gu.cpp dibuja el cursor aqui */
 
 void SexyAppBase::InitInput()
@@ -28,7 +31,41 @@ void SexyAppBase::InitInput()
 	mMouseIn = true;
 }
 
-bool SexyAppBase::StartTextInput([[maybe_unused]] std::string& theInput) { return false; }
+/* teclado en pantalla de la PSP (OSK) para escribir el nombre del jugador */
+void PspGuFrameForOsk();   /* gl_gu.cpp: dibuja un fotograma vacio y llama a sceUtilityOskUpdate */
+bool SexyAppBase::StartTextInput(std::string& theInput)
+{
+#ifdef PSP_AUTOPLAY
+	theInput = "PSP"; gAutoEnter = 20; return true;
+#endif
+	static unsigned short desc[] = { 'N','o','m','b','r','e',0 };
+	unsigned short in[64] = { 0 }, out[64] = { 0 };
+	for (size_t i = 0; i < theInput.size() && i < 63; i++) in[i] = (unsigned char)theInput[i];
+	SceUtilityOskData data; memset(&data, 0, sizeof(data));
+	data.language = PSP_UTILITY_OSK_LANGUAGE_DEFAULT;
+	data.lines = 1; data.unk_24 = 1;
+	data.inputtype = PSP_UTILITY_OSK_INPUTTYPE_ALL;
+	data.desc = desc; data.intext = in; data.outtextlength = 64; data.outtextlimit = 12; data.outtext = out;
+	SceUtilityOskParams params; memset(&params, 0, sizeof(params));
+	params.base.size = sizeof(params);
+	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &params.base.language);
+	sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_UNKNOWN, &params.base.buttonSwap);
+	params.base.graphicsThread = 17; params.base.accessThread = 19; params.base.fontThread = 18; params.base.soundThread = 16;
+	params.datacount = 1; params.data = &data;
+	if (sceUtilityOskInitStart(&params) < 0) return false;
+	for (;;) {
+		int st = sceUtilityOskGetStatus();
+		if (st == PSP_UTILITY_DIALOG_NONE) break;
+		if (st == PSP_UTILITY_DIALOG_VISIBLE) PspGuFrameForOsk();
+		else if (st == PSP_UTILITY_DIALOG_QUIT) sceUtilityOskShutdownStart();
+		else PspGuFrameForOsk();
+	}
+	if (data.result != PSP_UTILITY_OSK_RESULT_CHANGED && data.result != PSP_UTILITY_OSK_RESULT_UNCHANGED) return false;
+	theInput.clear();
+	for (int i = 0; out[i] && i < 63; i++) theInput += out[i] < 128 ? (char)out[i] : '?';
+	gPrev = 0xFFFFFFFF;   /* que no cuente como pulsada la X que cerro el teclado */
+	return true;
+}
 void SexyAppBase::StopTextInput() {}
 void SexyAppBase::SetTextInputRect([[maybe_unused]] const Rect& theRect) {}
 
@@ -61,11 +98,12 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 	PspSetCameraY(PspGetCameraY() + (target - PspGetCameraY()) * 0.25f);
 
 #ifdef PSP_AUTOPLAY
+	if (gAutoEnter && --gAutoEnter == 0) { mWidgetManager->KeyDown(KEYCODE_RETURN); mWidgetManager->KeyChar('\r'); mWidgetManager->KeyUp(KEYCODE_RETURN); }
 	{   /* pruebas: "segundo:x,y;..." -> lleva el cursor y hace clic en ese segundo desde el arranque */
 		static const char *sNext = PSP_AUTOPLAY; static int sDown = 0;
 		int ms = (int)(sceKernelGetSystemTimeWide() / 1000), f, cx, cy, n;
 		static int sLog;
-		if (sLog++ % 600 == 0) { FILE *lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "AUTO ms=%d next='%s' parse=%d\n", ms, sNext, sscanf(sNext, "%d:%d,%d%n", &f, &cx, &cy, &n)); fclose(lf); } }
+		if (sLog++ % 600 == 0) { FILE *lf = fopen("mem.log", "a"); if (lf) { fprintf(lf, "AUTO cur=%d,%d ms=%d next='%s' parse=%d\n", gPspCursorX, gPspCursorY, ms, sNext, sscanf(sNext, "%d:%d,%d%n", &f, &cx, &cy, &n)); fclose(lf); } }
 		if (*sNext && sscanf(sNext, "%d:%d,%d%n", &f, &cx, &cy, &n) == 3) {
 			if (!sDown && ms >= f * 1000) { gCurX = cx; gCurY = cy; mWidgetManager->MouseMove(cx, cy); mWidgetManager->MouseDown(cx, cy, 1); sDown = ms; }
 			else if (sDown && ms >= sDown + 100) { mWidgetManager->MouseUp(cx, cy, 1); sDown = 0; sNext += n; if (*sNext == ';') sNext++; }
