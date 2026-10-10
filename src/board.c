@@ -56,7 +56,7 @@
 #define IMG_SNOWPEA 587
 #define IMG_FIREPEA 335
 #define IMG_PUFF 324
-#define IMG_SPIKE 109        /* espina del cactus (la 426 es su boca, pista 11) */
+#define IMG_SPIKE 1474       /* pua del cactus y la espadana (la del PC; la 109 del J2ME no se parecia) */
 #define IMG_STAR 20
 #define IMG_CABBAGE 544      /* col (la misma que sostiene, pista 6 de la coltapulta) */
 #define IMG_KERNEL 188       /* grano de maiz (la 30 es la cesta de la catapulta) */
@@ -192,7 +192,7 @@ enum { MODE_LAWN, MODE_BANK, MODE_SHOVEL, MODE_COB };
 static int cob_r, cob_c;                 /* mazorcanon que se esta apuntando */
 static float fog_a[RMAX][COLS]; static int fog_col, fog_blown;   /* niebla (zona 4) */
 /* minijuegos */
-static int ls_setup;                       /* ultima resistencia: preparando la defensa (SELECT empieza) */
+static int ls_setup, ls_done;              /* ultima resistencia: preparando la defensa (SELECT empieza); oleada ya cerrada */
 static int portal[4][2], portal_timer;     /* portales: 0<->1 y 2<->3 (fila, columna) */
 #define BOWLING (lv == 4 || lv == LV_MG_BOWL)
 static void mg_portal_reset(void);
@@ -233,7 +233,7 @@ static Plant *top_plant(int r, int c) {
     if (P[r][c][0].alive) return &P[r][c][0];
     return NULL;
 }
-static const PlantDef rednut_def = { "NUEZ EXPLOSIVA", 1368, 0, 0, RE_TC_REDNUT, 4000, PK_WALL, 0, 0, 0, 8, -1, -1, 0 };
+static const PlantDef rednut_def = { "NUEZ EXPLOSIVA", 1369, 0, 0, RE_TC_REDNUT, 4000, PK_WALL, 0, 0, 0, 8, -1, -1, 0 };
 static const PlantDef *pdef(int t) { return t == PL_REDNUT ? &rednut_def : &plant_defs[t == PL_BOWLNUT ? PL_WALLNUT : t]; }
 static int seed_type(int i) { return conveyor ? belt[i] : seeds[i]; }
 
@@ -441,7 +441,7 @@ static void z_parts(Zombie *z)
         int st = z->shield * 3 > z->maxshield * 2 ? 0 : (z->shield * 3 > z->maxshield ? 1 : 2);
         m &= ~(1u << (27 + st));
     }
-    if (z->arm_lost) m |= 1u << 20;
+    if (z->arm_lost) m |= (1u << 20) | (1u << 18);     /* 18: el brazo de nadar (40-49) */
     if (z->state == ZS_DYING) m |= 1u << 19;
     z->anim.hide_mask[0] = m;
 }
@@ -569,7 +569,7 @@ static void z_damage(Zombie *z, int dmg, int from_front, int snow)
         } else { z_parts(z); return; }
     }
     if (z->helm > 0) {
-        int metal = z->type == ZT_BUCKET || z->type == ZT_FOOTBALL;
+        int metal = z->type == ZT_BUCKET;              /* el casco del deportista es de plastico */
         float hx = z->x + 2, hy = cell_y(z->row) + G.rh * 0.15f + z->yoff;
         if ((z->type == ZT_CONE || metal) && !quiet_dmg) part(metal ? PS_BUCKETBIT : PS_CONEBIT, hx, hy, frnd(-0.4f, 0.6f), -0.5f, 0.04f, 40);
         int had = z->helm;
@@ -579,7 +579,7 @@ static void z_damage(Zombie *z, int dmg, int from_front, int snow)
             else if (z->type == ZT_BUCKET) z_drop(z, 26, 316);
             else if (z->type == ZT_FOOTBALL) z_drop(z, -1, 450);
         }
-        if (!quiet_dmg) sfx_play(z->type == ZT_BUCKET || z->type == ZT_FOOTBALL ? (rand() & 1 ? SFX_SHIELDHIT : SFX_SHIELDHIT2) : SFX_PLASTICHIT);
+        if (!quiet_dmg) sfx_play(z->type == ZT_BUCKET ? (rand() & 1 ? SFX_SHIELDHIT : SFX_SHIELDHIT2) : SFX_PLASTICHIT);
         if (z->helm < 0) { z->hp += z->helm; z->helm = 0; }
     } else {
         z->hp -= dmg;
@@ -923,8 +923,9 @@ static void draw_fog(void)
         float a = fog_a[r][c < COLS ? c : COLS - 1] * k;
         if (a < 0.02f) continue;
         float x = cell_x(c) + G.cw / 2 + sinf(frame * 0.01f + r * 1.7f + c) * 4, y = cy_c(r, c < COLS ? c : COLS - 1) + G.rh / 2;
-        u32 col = ((u32)(a * 150) << 24) | 0xFFFFFF;          /* manchas suaves (1390) que se solapan: sin cuadros */
-        gfx_draw_ex(IMG_FOG, sxw(x), syw(y), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.75f * G.ws, 0.6f * G.ws, 0, col, 0);
+        u32 col = ((u32)(a * 235) << 24) | 0xF0ECEC;          /* manchas suaves (1390) que se solapan: sin cuadros */
+        gfx_draw_ex(IMG_FOG, sxw(x), syw(y), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.9f * G.ws, 0.75f * G.ws, 0, col, 0);
+        gfx_draw_ex(IMG_FOG, sxw(x - 6), syw(y + 8), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.7f * G.ws, 0.55f * G.ws, 0, col, 0);
         gfx_draw_ex(IMG_FOG, sxw(x + 8), syw(y - 10), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
     }
 }
@@ -1012,6 +1013,9 @@ static void fire_pea(Plant *p, int r, int c, int kind)
     plant_origin(p, r, c, &ox, &oy);
     if (head >= 0 && reanim_track_info(&p->anim, head, &hx, &hy, &img) && img >= 0) {
         mx = ox + hx + img_w(img) * 1.12f - 8; my = oy + hy + img_h(img) * 1.12f * 0.40f;   /* dentro de la boca (cabeza a escala 1.12) */
+    } else if (p->anim.def) {                      /* guisantrallador: el canon esta a un tercio de su altura */
+        float *bb = p->anim.def->bbox;
+        mx = ox + bb[2] - 4; my = oy + bb[1] + (bb[3] - bb[1]) * 0.32f;
     }
     Proj *q = new_proj(kind, r, mx, my);
     if (q) q->x0 = px - 4;                    /* tramo desde la planta: un zombi pegado a ella tambien recibe */
@@ -1334,7 +1338,7 @@ static void update_plant(Plant *p, int r, int c)
             if (p->aux >= 0 && p->anim.frame >= 25) {
                 float ox, oy; plant_origin(p, r, c, &ox, &oy);
                 Proj *q = new_proj(PJ_COB, p->shot_at, px + G.cw * 0.5f, oy);
-                if (q) { q->target = -1; q->tx = (float)p->aux; q->ty = cy_x(p->shot_at, q->tx) + G.rh * 0.6f; q->dur = 160; }
+                if (q) { q->target = -1; q->tx = (float)p->aux; q->ty = cy_x(p->shot_at, q->tx) + G.rh * 0.6f; q->dur = 320; }
                 sfx_play(SFX_COBLAUNCH); p->aux = -1;
             }
             if (reanim_done(&p->anim)) { p->state = 0; p->timer = d->rate; plant_set_idle(p); }
@@ -1358,6 +1362,34 @@ static void update_plant(Plant *p, int r, int c)
             if (--p->shot_at > 0) p->anim.frame = 14;          /* segundo pincho */
         }
         if (p->state == 1 && reanim_done(&p->anim)) { p->state = 0; plant_set_idle(p); }
+        break;
+    }
+    case PK_GLOOM: {     /* seta melancolica: infla los mofletes y suelta humo 4 veces alrededor (3x3) */
+        if (p->timer > 0) p->timer--;
+        int near = 0;
+        for (int i = 0; i < MAXZ && !near; i++) {
+            Zombie *z = &Z[i];
+            if (z_hittable(z) && abs(z->row - r) <= 1 && fabsf(z->x - px) <= G.cw * 1.6f && !z->balloon && !z_submerged(z)) near = 1;
+        }
+        if (p->state == 0 && near && p->timer <= 0) { p->state = 1; p->aux = 0; p->timer = d->rate; }
+        if (p->state == 1) {
+            p->aux++;
+            if (p->aux % 28 == 20) {             /* suelta el humo cuando los mofletes estan llenos */
+                float cy = cy_c(r, c) + G.rh * 0.45f + pot_lift_y(r, c);
+                for (int k = 0; k < 10; k++) {
+                    float a = k * 0.628f + frnd(-0.2f, 0.2f), v = frnd(0.6f, 1.1f);
+                    Part *f = part(PS_PUFF, px + cosf(a) * 8, cy + sinf(a) * 6, cosf(a) * v, sinf(a) * v * 0.8f, 0, rnd(28, 40)); if (f) f->sc = 1.4f;
+                }
+                for (int i = 0; i < MAXZ; i++) {
+                    Zombie *z = &Z[i];
+                    if (z_hittable(z) && abs(z->row - r) <= 1 && fabsf(z->x - px) <= G.cw * 1.6f && !z->balloon && !z_submerged(z)) {
+                        z_damage(z, 20, 0, 0); part(PS_FUMEBIT, z->x, cell_y(z->row) + G.rh * 0.4f, 0, -0.1f, 0, 30);
+                    }
+                }
+                if (p->aux < 28) sfx_play(SFX_FUME);
+            }
+            if (p->aux >= 28 * 4) p->state = 0;
+        }
         break;
     }
     case PK_BLOVER:      /* sopla (17-31): se lleva los globos y la niebla y desaparece */
@@ -1402,8 +1434,15 @@ static void update_projectiles(void)
             q->t += 1;
             float f = q->t / q->dur;
             if (q->kind != PJ_BALL && q->kind != PJ_COB && q->target >= 0 && z_hittable(&Z[q->target])) q->tx = Z[q->target].x;
-            q->x = q->x0 + (q->tx - q->x0) * f;
-            q->y = q->y0 + (q->ty - q->y0) * f - sinf(f * 3.14159f) * G.rh * (q->kind == PJ_COB ? 7.0f : 1.6f);
+            if (q->kind == PJ_COB) {                     /* mazorca: sube recta hasta salir de la pantalla y cae recta en el blanco */
+                float top = G.camy - 70;
+                if (f < 0.45f) { q->x = q->x0; q->y = q->y0 + (top - q->y0) * (f / 0.45f) * (f / 0.45f); }
+                else if (f < 0.6f) q->y = top - 40;
+                else { float k = (f - 0.6f) / 0.4f; q->x = q->tx; q->y = top + (q->ty - top) * k * k; }
+            } else {
+                q->x = q->x0 + (q->tx - q->x0) * f;
+                q->y = q->y0 + (q->ty - q->y0) * f - sinf(f * 3.14159f) * G.rh * 1.6f;
+            }
             if (f >= 1) {
                 q->alive = 0;
                 if (q->kind == PJ_COB) {                 /* mazorca: explota en 3x3 */
@@ -1454,6 +1493,10 @@ static void update_projectiles(void)
             for (int k = 0; k < MAXZ; k++) {
                 Zombie *z = &Z[k];
                 if (z_hittable(z) && z->row == row && fabsf(z->x - q->x) < 12 && q->target != k) {
+                    if (z->type == ZT_POLE && !z->jumped && z->state == ZS_WALK) {   /* el saltador salta la primera nuez */
+                        z->jx0 = z->x; z->timer = 0; z->state = ZS_JUMP; z_anim(z, 13, 23, 0); z->anim.speed = 1.3f;
+                        z->jsnd = sfx_play(SFX_POLEVAULT) + 1; q->target = k; continue;
+                    }
                     if (q->kind == PJ_REDNUT) {                 /* nuez explosiva: revienta en 3x3 */
                         explode(q->x, row, G.cw * 1.5f, 1, 1800, SFX_CHERRYBOMB, 1); boom_fx(q->x, cell_y(row) + G.rh / 2);
                         q->alive = 0; break;
@@ -1581,9 +1624,9 @@ static void update_waves(void)
 {
     if (lv == LV_MG_LAST) {                       /* ultima resistencia: 5 asaltos; entre uno y otro se prepara la defensa */
         if (ls_setup) return;
-        if (wave > 0 && wave < nwaves && is_flag_wave(wave - 1)) {
+        if (wave > 0 && wave < nwaves && is_flag_wave(wave - 1) && ls_done != wave) {
             for (int i = 0; i < MAXZ; i++) if (Z[i].alive && !Z[i].hypno) return;
-            ls_setup = 1; sun += 250; sfx_play(SFX_WINMUSIC); return;
+            ls_setup = 1; ls_done = wave; sun += 250; sfx_play(SFX_POINTS); return;   /* asalto superado: +250 soles */
         }
     }
     if (wave >= nwaves) {
@@ -1802,13 +1845,7 @@ static void setup_area(void)
     if (G.roof) G.camy = 12;   /* la pendiente baja la ultima fila de la columna 0 hasta y=273 */
 }
 
-/* orden de plantas del J2ME (ids 0..30 de su tabla; asi aparecen en "elige tus plantas") */
-static const signed char j2me_order[PL_COUNT] = {
-    PL_SEASHROOM, PL_TANGLEKELP, PL_SUNFLOWER, PL_PEASHOOTER, PL_WALLNUT, PL_REPEATER, PL_SNOWPEA, PL_CHERRYBOMB,
-    PL_POTATOMINE, PL_CHOMPER, PL_THREEPEATER, PL_SQUASH, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT,
-    PL_CABBAGEPULT, PL_KERNELPULT, PL_MELONPULT, PL_STARFRUIT, PL_CACTUS, PL_PUFFSHROOM, PL_SUNSHROOM, PL_FUMESHROOM,
-    PL_GRAVEBUSTER, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_HYPNOSHROOM, PL_DOOMSHROOM, PL_LILYPAD, PL_FLOWERPOT,
-    PL_PLANTERN, PL_BLOVER, PL_PUMPKIN, PL_GARLIC, PL_GATLING, PL_WINTERMELON, PL_CATTAIL, PL_COBCANNON };
+/* "elige tus plantas" en el orden del PC (pc_order de defs.h) */
 
 /* reposo de cada zombi (primer rango de su animacion) para los de muestra */
 static const signed char z_idle[ZT_COUNT][2] = {
@@ -1821,7 +1858,6 @@ static void setup_preview(void)
     int types[ZT_COUNT], nt = 0;
     for (int t = 0; t < ZT_COUNT; t++) {
         if (t == ZT_BOSS || t == ZT_BACKUP || t == ZT_IMP || !zt_in_level(t, lv)) continue;
-        if (zombie_defs[t].flags & ZF_SWIM) continue;
         types[nt++] = t;
     }
     npz = lv == 49 ? 0 : (lv < 3 ? 4 + lv : 9);
@@ -1829,7 +1865,7 @@ static void setup_preview(void)
     for (int i = 0; i < npz; i++) {
         Zombie *z = &PZ[i]; memset(z, 0, sizeof(*z));
         int t = i < nt ? types[nt - 1 - i] : ZT_NORMAL;
-        if (i >= nt && nt > 1 && (i & 1)) t = types[rnd(0, nt - 1)];
+        if (i >= nt && nt > 1 && (i & 1)) { t = types[rnd(0, nt - 1)]; if (t == ZT_FLAG) t = ZT_NORMAL; }   /* un solo abanderado */
         const ZombieDef *d = &zombie_defs[t];
         z->alive = 1; z->type = t; z->dir = -1; z->x = pos[i][0] + frnd(-3, 3); z->yoff = pos[i][1] + 6 + dy;
         z->hp = d->hp; z->helm = z->maxhelm = d->helm; z->shield = z->maxshield = d->shield;
@@ -1856,7 +1892,7 @@ void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
     slots = nslots; has_shovel_flag = has_shovel;
     /* semillas: todas si caben; si no, se eligen durante la intro (como el J2ME) */
     ch_n = 0; ch_cur = 0; ch_scroll = 0;
-    for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < nav; i++) if (av[i] == j2me_order[k]) ch_list[ch_n++] = av[i];
+    for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < nav; i++) if (av[i] == pc_order[k]) ch_list[ch_n++] = av[i];
     choosing = !conveyor && ch_n > slots;
     nseeds = 0;
     if (!conveyor && !choosing) for (int i = 0; i < ch_n; i++) seeds[nseeds++] = ch_list[i];
@@ -1883,7 +1919,7 @@ void board_start(int level, const int *av, int nav, int nslots, int has_shovel)
     }
     sun = conveyor ? 0 : lv == LV_MG_LAST ? 5000 : (lv == 0 ? 150 : 50);
     if (lv == LV_MG_LAST) G.sky_sun = 0;
-    ls_setup = lv == LV_MG_LAST; mg_portal_reset(); portal_timer = 3000;
+    ls_setup = lv == LV_MG_LAST; ls_done = -1; mg_portal_reset(); portal_timer = 3000;
     suns_fallen = 0; sky_timer = 425;
     init_refresh();
     mode = MODE_LAWN; held = -1; bank_sel = 0;
@@ -2191,6 +2227,19 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 900) { plant_at(5, 6, PL_CHERRYBOMB); }
     if (state == ST_PLAY) wave_timer = 9999;
 #endif
+#if defined(AUTOTEST) && defined(AT_GLOOM)
+    if (state == ST_PLAY && state_timer == 20) {
+        static const int pl[] = { PL_GLOOM, PL_CACTUS, PL_COBCANNON, PL_GATLING };
+        for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
+        plant_at(2, 4, PL_GLOOM); P[2][4][1].sleeping = 0; plant_at(1, 0, PL_CACTUS); plant_at(3, 0, PL_COBCANNON); P[3][0][1].timer = 50;
+        plant_at(0, 0, PL_GATLING); plant_at(4, 2, PL_GLOOM);
+        for (int r = 0; r < G.rows; r++) spawn_zombie(ZT_NORMAL, r, cell_x(8) + 10);
+        spawn_zombie(ZT_CONE, 2, cell_x(7)); spawn_zombie(ZT_BALLOON, 1, cell_x(8));
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY && state_timer == 300) { Plant *cp = &P[3][0][1]; if (cp->state == 2) { cp->state = 3; cp->aux = (int)(cell_x(6) + G.cw / 2); cp->shot_at = 3; reanim_play(&cp->anim, RE_TC_COBCANNON, 17, 29, 0); } }
+    if (state == ST_PLAY) wave_timer = 9999;
+#endif
 #if defined(AUTOTEST) && defined(AT_ROOFT)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_GATLING, PL_WINTERMELON, PL_COBCANNON, PL_PLANTERN, PL_PEASHOOTER, PL_PUMPKIN, PL_SNOWPEA };
@@ -2246,7 +2295,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -2274,7 +2323,7 @@ int board_update(void)
         reward_alive = 0; sfx_play(SFX_SEEDLIFT); return BR_WON;
     }
     float dt = 1.0f / 60.0f;
-    for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) for (int l = 0; l < 3; l++) if (P[r][c][l].alive) reanim_update(&P[r][c][l].anim, dt);
+    for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) for (int l = 0; l < 3; l++) if (P[r][c][l].alive) reanim_update(&P[r][c][l].anim, P[r][c][l].anim.def && P[r][c][l].anim.def->fps >= 12 && P[r][c][l].type >= PL_J2ME_COUNT ? dt * 0.5f : dt);
     for (int i = 0; i < MAXZ; i++) if (Z[i].alive) reanim_update(&Z[i].anim, dt);
     auto_collect();
     tick_acc += 100.0f / 60.0f;
@@ -2308,6 +2357,36 @@ static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
     anim_origin(a, cx, bottom, &ox, &oy);
     if (flip) reanim_draw_flip(a, sxw(2 * cx - ox), syw(oy), G.ws, 1, col);   /* mirando a la derecha */
     else reanim_draw(a, sxw(ox), syw(oy), G.ws, col);
+}
+
+/* seta melancolica: piezas de la DS (1460..1473): cuerpo verde, bocas de tubo alrededor, cabeza que respira,
+ * parpadea, duerme de dia y infla los mofletes al echar humo */
+static void draw_gloom(Plant *p, float cx, float base, u32 col)
+{
+    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_RING_L = 1470, G_RING_D = 1469, G_RING_T = 1468, G_BODY = 1473 };
+    float bw = img_w(G_BODY), bh = img_h(G_BODY);
+    float hw = img_w(G_HEAD), hh = img_h(G_HEAD);
+    float breath = 1 + 0.03f * sinf(frame * 0.07f + cx * 0.1f);
+    float hx = cx, hy = base - bh * 0.75f - hh * 0.42f;
+    int head = G_HEAD; float hs = 1;
+    if (p->state == 1 && !p->sleeping) {
+        int ph = p->aux % 28;
+        if (ph >= 8 && ph < 16) { head = G_PUFF1; hs = 1.25f; } else if (ph >= 16 && ph < 22) { head = G_PUFF2; hs = 1.35f; }
+    }
+    /* bocas de tubo (detras de la cabeza) */
+    gfx_draw_ex(G_RING_L, sxw(hx - hw * 0.5f), syw(hy + 2), img_w(G_RING_L) / 2.0f, img_h(G_RING_L) / 2.0f, G.ws, G.ws, 0, col, 0);
+    gfx_draw_ex(G_RING_L, sxw(hx + hw * 0.5f), syw(hy + 2), img_w(G_RING_L) / 2.0f, img_h(G_RING_L) / 2.0f, G.ws, G.ws, 0, col, GFX_FLIPX);
+    gfx_draw_ex(G_RING_D, sxw(hx - hw * 0.36f), syw(hy - hh * 0.36f), img_w(G_RING_D) / 2.0f, img_h(G_RING_D) / 2.0f, G.ws, G.ws, 0, col, 0);
+    gfx_draw_ex(G_RING_D, sxw(hx + hw * 0.36f), syw(hy - hh * 0.36f), img_w(G_RING_D) / 2.0f, img_h(G_RING_D) / 2.0f, G.ws, G.ws, 0, col, GFX_FLIPX);
+    gfx_draw_ex(G_RING_T, sxw(hx), syw(hy - hh * 0.5f), img_w(G_RING_T) / 2.0f, img_h(G_RING_T) / 2.0f, G.ws, G.ws, 0, col, 0);
+    gfx_draw_ex(G_BODY, sxw(cx), syw(base - bh / 2 + 1), bw / 2, bh / 2, G.ws, G.ws, 0, col, 0);
+    float sw = hw * hs / img_w(head), sh = hh * hs / img_h(head);
+    if (head != G_HEAD) { sw = hw * hs / img_w(head) * 0.92f; sh = sw; }
+    gfx_draw_ex(head, sxw(hx), syw(hy), img_w(head) / 2.0f, img_h(head) / 2.0f, sw * G.ws, sh * G.ws * breath, 0, col, 0);
+    if (head == G_HEAD) {                         /* parpados: dormida (de dia) o parpadeo de vez en cuando */
+        int lid = p->sleeping ? G_LID_SHUT : ((frame + (int)cx * 7) % 260 < 10 ? G_LID_HALF : 0);
+        if (lid) gfx_draw_ex(lid, sxw(hx), syw(hy - hh * 0.16f), img_w(lid) / 2.0f, img_h(lid) / 2.0f, hw * 0.78f / img_w(lid) * G.ws, G.ws, 0, col, 0);
+    }
 }
 
 static void draw_progress(void)
@@ -2361,7 +2440,7 @@ static void draw_bank(void)
     for (int i = 0; i < nb; i++) {
         int t = seed_type(i);
         float x = 2 + (i == held ? 5 : 0), y = (conveyor ? belt_x[i] : SLOT_Y(i)) + yo;
-        int pk = t == PL_REDNUT ? 1388 : plant_smallpack(t == PL_BOWLNUT ? PL_WALLNUT : t);
+        int pk = t == PL_REDNUT ? 1389 : plant_smallpack(t == PL_BOWLNUT ? PL_WALLNUT : t);
         int ok = bank_ready(i);
         gfx_draw(IMG_SEEDFRAME, x, y, WHITE, 0);
         gfx_draw(pk, x + 2, y + 2, ok ? WHITE : 0xFF707070, 0);
@@ -2555,7 +2634,18 @@ void board_draw(void)
                 Plant *p = &P[r][c][l];
                 if (!p->alive) continue;
                 if (l == 2) p->anim.hide_mask[0] = 1u << 1;                /* mitad de delante, encima de la planta */
-                if (p->part) continue;
+                if (p->type == PL_COBCANNON && !p->part) continue;   /* se dibuja con la mitad derecha, encima de las dos macetas */
+                if (p->part) {
+                    Plant *m = &P[r][c - 1][1];
+                    float myo = P[r][c][0].alive ? pot_lift(r, c) : 0;
+                    draw_anim_at(&m->anim, cell_x(c), base + myo, WHITE, 0);
+                    continue;
+                }
+                if (p->type == PL_GLOOM) {
+                    float gyo = P[r][c][0].alive ? pot_lift(r, c) : 0;
+                    draw_gloom(p, cell_x(c) + G.cw / 2, base + gyo, p->sleeping ? 0xFFB0B0B0 : WHITE);
+                    continue;
+                }
                 if (lane[r] != LN_WATER && l == 1 && !P[r][c][0].alive)
                     gfx_draw_ex(IMG_SHADOW, sxw(cell_x(c) + G.cw / 2), syw(base), 28, 11, 0.45f * G.ws, 0.45f * G.ws, 0, 0x50FFFFFF, 0);
                 float yo = (l >= 1 && P[r][c][0].alive) ? pot_lift(r, c) : 0;
@@ -2576,24 +2666,23 @@ void board_draw(void)
             Proj *q = &PJ[i];
             if (!q->alive || q->row != r) continue;
             if (q->kind == PJ_BOWL || q->kind == PJ_REDNUT) {
-                static ReAnim nut, red;
+                static ReAnim nut;
                 if (!nut.def) reanim_play(&nut, RE_WALLNUT, 0, 0, 1);
-                if (q->kind == PJ_REDNUT && !red.def) reanim_play(&red, RE_TC_REDNUT, 0, 0, 1);
-                ReAnim *na = q->kind == PJ_REDNUT ? &red : &nut;
+                ReAnim *na = &nut;      /* la explosiva es la misma nuez del J2ME tenida de rojo (la del Tencent giraba mal) */
                 float *bb = na->def ? na->def->bbox : NULL;
                 if (bb) {
                     float a = q->x * 0.15f, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
                     float ca = cosf(a) * G.ws, sa = sinf(a) * G.ws;
                     /* nuez rodando: frame 0 de su animacion rotado alrededor de su centro */
-                    ReFrame *F = &na->def->frames[(q->kind == PJ_REDNUT ? 6 : 4) * na->def->nframes];
+                    ReFrame *F = &na->def->frames[4 * na->def->nframes];
                     float ox = F->x - cx, oy = F->y - cy;
-                    gfx_draw_affine(F->img, sxw(q->x) + ox * ca - oy * sa, syw(q->y) + ox * sa + oy * ca, ca, sa, -sa, ca, WHITE);
+                    gfx_draw_affine(F->img, sxw(q->x) + ox * ca - oy * sa, syw(q->y) + ox * sa + oy * ca, ca, sa, -sa, ca, q->kind == PJ_REDNUT ? 0xFF5050FF : WHITE);
                 }
                 continue;
             }
             int img; float sc; proj_img(q, &img, &sc);
             if (q->kind == PJ_COB || q->kind == PJ_HOMING) {   /* orientados segun su trayectoria */
-                float a = q->kind == PJ_COB ? (q->t / q->dur - 0.5f) * 3.0f : atan2f(q->vy, q->vx);
+                float a = q->kind == PJ_COB ? (q->t / q->dur < 0.5f ? -1.5708f : 1.5708f) : atan2f(q->vy, q->vx);
                 gfx_draw_ex(img, sxw(q->x), syw(q->y), img_w(img) / 2.0f, img_h(img) / 2.0f, G.ws * sc, G.ws * sc, a, WHITE, 0);
             } else draw_world_c(img, q->x, q->y, sc, WHITE);
         }
@@ -2626,11 +2715,17 @@ void board_draw(void)
         if (held >= 0 && !bad) {                 /* la planta elegida se ve en la casilla, como en el PvZBV */
             static ReAnim ghost;
             int t = seed_type(held); const PlantDef *d = pdef(t);
+            if (t == PL_GLOOM) {
+                static Plant gp; gp.type = PL_GLOOM;
+                draw_gloom(&gp, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF);
+                goto ghost_done;
+            }
             if (t >= PL_J2ME_COUNT && t < PL_COUNT) reanim_fix_bbox(reanim_get(d->re), d->idle_s);
             if (ghost.def != reanim_get(d->re)) reanim_play(&ghost, d->re, d->idle_s, d->idle_e, 1);
             ghost.hide_mask[0] = d->hide;
             draw_anim_at(&ghost, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF, 0);
         }
+        ghost_done:;
         cursor_to(cx, cy, cw, ch, bad || mode == MODE_COB ? IMG_CUR_BAD : IMG_CUR_OK);
         if (mode == MODE_COB) gfx_draw_ex(IMG_TARGET, cx + cw / 2, cy + ch / 2, img_w(IMG_TARGET) / 2.0f, img_h(IMG_TARGET) / 2.0f, 0.8f, 0.8f, 0, 0xE0FFFFFF, 0);
         if (mode == MODE_SHOVEL) {                /* la pala en la casilla, inclinada como en el juego original */

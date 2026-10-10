@@ -336,3 +336,15 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Tejado: las partículas de tierra de las macetas iniciales se quedaban congeladas durante la intro.
 - Zombis de cada nivel según la lista del PC (`orden_zombis_pvz1.txt`): playero, buzo, delfín, cajita, globo,
   excavador, saltarín, escalerilla, catapulta, zombistein y diablillo en sus niveles (sin zomboni, bobsled ni bungee).
+
+### ✅ Sesión 13 — errores6 y seta melancólica
+- Seta melancólica (PL_GLOOM): piezas de la hoja de la DS (`ref/melancoseta_ds.png`, `tools/gloom_parts.py`,
+  ids 1460-1473) dibujadas por código (`draw_gloom`): cuerpo, bocas de tubo, cabeza que respira y parpadea,
+  duerme de día e infla los mofletes; 4 bocanadas de humo en 3x3. Recompensa en 4-4.
+- Púa del cactus y de la espadaña: la del PC (`ref/pua_cactus.png`, id 1474).
+- Mazorcañón: la mazorca sube recta y cae recta en el blanco (3,2 s); animaciones del Tencent de 12 fps a la mitad;
+  se dibuja desde su mitad derecha para quedar encima de las dos macetas.
+- Orden de recompensas y de "elige tus plantas"/almanaque como el PC (`pc_order`). Zombis de muestra con los de la
+  piscina y un solo abanderado. Playero pierde también el brazo de nadar (pista 18). Casco del deportista con
+  sonido de plástico. Última resistencia: SELECT empieza de verdad el siguiente asalto. El saltador salta la
+  primera nuez de los bolos; la nuez explosiva es la nuez del J2ME tenida de rojo. Niebla más espesa.

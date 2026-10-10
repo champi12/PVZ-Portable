@@ -33,8 +33,8 @@ for n in range(0, 69):
 # sobres de las plantas nuevas (orden PL_GATLING.. de defs.h): 1360+k a 47x33 (selector), 1380+k a 38x28 (barra).
 # El icono sale del sobre del Tencent y el coste se monta con los digitos de pixel de los sobres del J2ME/PvZBV
 # (el del Tencent reducido no se leia).
-NEWPK = [481, 176, 113, 80, 538, 291, 233, 473, 84]
-COSTS = ['350', '350', '500', '225', '100', '25', '50', '125', '']
+NEWPK = [481, 176, 113, 80, 538, 291, 233, 473, 59, 84]           # 59 (seta) solo de relleno: la melancolica sale de la hoja
+COSTS = ['350', '350', '500', '225', '100', '25', '50', '125', '150', '']
 def yellow(px): return px[3] > 0 and px[0] > 180 and px[1] > 160 and px[2] < 120
 def segs(box):
     cols = [any(yellow(box.getpixel((x, y))) for y in range(box.height)) for x in range(box.width)]
@@ -144,7 +144,7 @@ if len(sys.argv) > 8:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from seed_sheet import Sheet
     sh = Sheet(sys.argv[8])
-    NEWCELL = [(5, 0), (5, 4), (5, 7), (5, 3), (3, 3), (3, 1), (4, 4), (3, 6), (6, 1)]   # orden de NEWPK
+    NEWCELL = [(5, 0), (5, 4), (5, 7), (5, 3), (3, 3), (3, 1), (4, 4), (3, 6), (5, 2), (6, 1)]   # orden de NEWPK
     for k, (r, c) in enumerate(NEWCELL):
         for base, (w, h) in ((1360, (47, 33)), (1380, (38, 28))):
             meta[:] = [m for m in meta if m['id'] != base + k]; have.discard(base + k)
@@ -157,6 +157,19 @@ if len(sys.argv) > 8:
     for k, ((r, c), cost) in enumerate(EXTRA): put(1400 + k, sh.packet(r, c, 47, 33, cost))
     fill(1440)
     for k, ((r, c), cost) in enumerate(EXTRA): put(1440 + k, sh.packet(r, c, 38, 28, cost))
+# extras de ref/ (opcionales, junto a la hoja de sobres): 1460.. piezas de la seta melancolica (hoja de la DS,
+# reducidas a 0.42) y 1474 la pua del cactus/espadana
+if len(sys.argv) > 8:
+    ref = os.path.dirname(os.path.abspath(sys.argv[8]))
+    gp = os.path.join(ref, 'melancoseta_ds.png')
+    if os.path.exists(gp):
+        from gloom_parts import BOXES, cut
+        gim = Image.open(gp)
+        fill(1460)
+        for k, b in enumerate(BOXES):
+            c = cut(gim, b); put(1460 + k, c.resize((max(1, round(c.width * 0.42)), max(1, round(c.height * 0.42))), Image.LANCZOS))
+    sp = os.path.join(ref, 'pua_cactus.png')
+    if os.path.exists(sp): fill(1474); put(1474, Image.open(sp).convert('RGBA'))
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter

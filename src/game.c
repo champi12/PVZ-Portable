@@ -151,13 +151,7 @@ static void almanac_build(void)
     alm_n = 0;
     if (alm_page == 1) {
         compute_avail(max_level);
-        static const signed char order[PL_COUNT] = {
-            PL_PEASHOOTER, PL_SUNFLOWER, PL_CHERRYBOMB, PL_WALLNUT, PL_POTATOMINE, PL_SNOWPEA, PL_CHOMPER, PL_REPEATER,
-            PL_PUFFSHROOM, PL_SUNSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, PL_HYPNOSHROOM, PL_SCAREDYSHROOM, PL_ICESHROOM,
-            PL_DOOMSHROOM, PL_LILYPAD, PL_SQUASH, PL_THREEPEATER, PL_TANGLEKELP, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD,
-            PL_TALLNUT, PL_SEASHROOM, PL_PLANTERN, PL_CACTUS, PL_BLOVER, PL_STARFRUIT, PL_PUMPKIN, PL_CABBAGEPULT, PL_FLOWERPOT,
-            PL_KERNELPULT, PL_GARLIC, PL_MELONPULT, PL_GATLING, PL_WINTERMELON, PL_CATTAIL, PL_COBCANNON };
-        for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < navail; i++) if (avail[i] == order[k]) alm_list[alm_n++] = order[k];
+        for (int k = 0; k < PL_COUNT; k++) for (int i = 0; i < navail; i++) if (avail[i] == pc_order[k]) alm_list[alm_n++] = pc_order[k];
     } else {
         static const signed char zorder[] = { ZT_NORMAL, ZT_FLAG, ZT_CONE, ZT_POLE, ZT_BUCKET, ZT_NEWSPAPER, ZT_DOOR, ZT_FOOTBALL,
             ZT_DANCER, ZT_BACKUP, ZT_DUCKY, ZT_SNORKEL, ZT_DOLPHIN, ZT_JACK, ZT_BALLOON, ZT_DIGGER, ZT_POGO, ZT_LADDER,
