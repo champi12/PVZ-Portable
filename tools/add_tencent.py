@@ -179,17 +179,41 @@ if len(sys.argv) > 8:
         fill(1475); put(1475, a.resize((round(a.width * 0.42), round(a.height * 0.42)), Image.LANCZOS))
         print('seta melancolica: centro de la cabeza en', round(acx * 0.42, 1), round(acy * 0.42, 1), 'de', a.size)
     dp = os.path.join(ref, 'ds_menus.webp')
-    if os.path.exists(dp):                     # 1476/1477: pergamino del almanaque de la DS con el girasol y el zombi
-        dim = Image.open(dp).convert('RGBA')
+    if os.path.exists(dp):
+        # pergamino de la DS: se separa el trazo (girasol / zombi) del papel y se pinta sobre un papel liso de un solo
+        # tono, a menor tamano. 1476/1477 fondos del almanaque (446x212), 1480 recuadro de planta nueva (400x120)
+        from PIL import ImageChops, ImageFilter as IFl, ImageStat
+        dim = Image.open(dp).convert('RGB')
+        inks = []
+        for x0 in (1140, 1302):
+            pg = dim.crop((x0 + 3, 274, x0 + 153, 363))
+            bl = pg.filter(IFl.GaussianBlur(4))
+            ink = ImageChops.subtract(bl, pg).convert('L').point(lambda v: 0 if v < 6 else min(255, (v - 3) * 3))
+            inks.append(Image.merge('RGB', (ink, ink, ink)))
+        paper = tuple(int(v) for v in ImageStat.Stat(dim.crop((1200, 280, 1290, 300))).median)
+        def sheet(w, h, ink, sc, x, y):
+            out = Image.new('RGB', (w, h), paper)
+            ik = ink.resize((round(ink.width * sc), round(ink.height * sc)), Image.LANCZOS)
+            layer = Image.new('RGB', (w, h)); layer.paste(ik, (x, y))
+            return ImageChops.subtract(out, layer).convert('RGBA')
         fill(1476)
-        for k, x0 in enumerate((1140, 1302)):
-            pg = dim.crop((x0, 272, x0 + 156, 365)).resize((446, 266), Image.LANCZOS)
-            # el trazo es muy tenue: se oscurece la diferencia con el papel (desenfocado) para que se vea
-            from PIL import ImageChops, ImageFilter as IFl
-            paper = pg.filter(IFl.GaussianBlur(8))
-            ink = ImageChops.subtract(paper, pg)
-            pg = ImageChops.subtract(pg, ink.point(lambda v: min(255, v * 2)))
-            put(1476 + k, pg.crop((0, 266 - 212, 446, 266)))
+        put(1476, sheet(446, 212, inks[0], 2.2, 4, 212 - 196))
+        put(1477, sheet(446, 212, inks[1], 2.2, 4, 212 - 196))
+    sp = os.path.join(ref, 'guisantralla_partes.png')
+    if os.path.exists(sp):                     # 1478/1479: guisantralla armada (cabeza doble / tallo y hojas)
+        from splitpea_parts import assemble as sp_assemble
+        hd, bd, _ = sp_assemble(Image.open(sp))
+        fill(1478)
+        put(1478, hd.resize((50, 22), Image.LANCZOS)); put(1479, bd.resize((30, 16), Image.LANCZOS))
+    if os.path.exists(dp):
+        fill(1480); put(1480, sheet(400, 120, inks[0], 1.3, 2, 120 - 116))
+    zp = os.path.join(ref, 'zombi_partes.png')
+    if os.path.exists(zp):                     # 1481: cara de asco del zombi al morder el ajo (hoja del PC)
+        from gloom_parts import cut
+        zim = Image.open(zp)
+        k = 19 / cut(zim, (1, 9, 54, 57)).width   # al tamano de la cabeza del J2ME (78: 19 px)
+        y = cut(zim, (303, 9, 356, 85))
+        fill(1481); put(1481, y.resize((round(y.width * k), round(y.height * k)), Image.LANCZOS))
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter

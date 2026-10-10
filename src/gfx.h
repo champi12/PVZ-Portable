@@ -8,6 +8,7 @@
 
 #define GFX_FLIPX 1
 #define GFX_FLIPY 2
+#define GFX_NEAREST 4   /* gfx_draw_ex sin filtro bilineal (giros de 90 grados: sin bordes oscuros) */
 
 #define RGBA(r,g,b,a) ((u32)(((a)<<24)|((b)<<16)|((g)<<8)|(r)))
 #define WHITE 0xFFFFFFFF

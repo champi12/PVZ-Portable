@@ -159,6 +159,7 @@ typedef struct { int alive; float x, y, vy, ty; int ttl, from_plant, collecting,
 typedef struct { int state; float x, sink; } Mower;   /* state 0 quieto, 1 avanzando, 2 gastado, 3 hundiendose */
 typedef struct { int alive, sheet, loop, img; float x, y, vx, vy, g, age, ttl, sc, rot, vr, floor; } Part;   /* img>=0: pieza suelta que cae */
 
+#define IMG_YUCK 1481
 #define MAXZ 64
 #define MAXP 96
 #define MAXS 32
@@ -499,7 +500,7 @@ static void z_drop(Zombie *z, int track, int fallback_img)
     if (!z_track_pos(z, track, &x, &y, &img)) { x = z->x; y = cell_y(z->row) + G.rh * 0.3f + z->yoff; img = fallback_img; }
     else if (fallback_img >= 0 && zd(z)->re == RE_ZOMBIE && track == 20) img = 350;
     if (img < 0) return;
-    if (z->inwater) { part(PS_SPLASH, x, cell_y(z->row) + G.rh * 0.8f, 0, 0, 0, 30); return; }
+    if (z->inwater) return;                    /* en la piscina la pieza se hunde sin otro chapoteo (como el PC) */
     drop_part(img, x, y, cell_y(z->row) + G.rh - 6, frnd(0.2f, 0.7f));
 }
 
@@ -868,11 +869,13 @@ static void update_zombies(void)
                 p->alive = 0; z->hypno = 1; z->dir = 1; sfx_play(SFX_MINDCONTROLLED); continue;
             }
             if (z->state != ZS_EAT) { z->state = ZS_EAT; z->chew = -1; z_eat(z); }
+            if (p->type == PL_GARLIC && z->garlic >= 0 && z->garlic == 20) sfx_play(rand() & 1 ? SFX_YUCK : SFX_YUCK2);   /* "puaj" */
+            if (p->type == PL_GARLIC && z->garlic < 0) z->garlic = 0;
             if (p->type == PL_GARLIC && ++z->garlic > 60) {   /* ajo: le da asco y se cambia de fila */
                 int nr[2] = { z->row - 1, z->row + 1 }, k = rand() & 1, to = -1;
                 for (int n = 0; n < 2 && to < 0; n++, k ^= 1) if (row_ok(nr[k]) && (lane[nr[k]] == LN_WATER) == (lane[z->row] == LN_WATER)) to = nr[k];
                 z->garlic = 0;
-                if (to >= 0) { z->dy = (z->row - to) * G.rh; z->row = to; z->x -= 4; z->state = ZS_WALK; z_walk(z); sfx_play(SFX_GROAN2); continue; }
+                if (to >= 0) { z->dy = (z->row - to) * G.rh; z->row = to; z->x -= 4; z->state = ZS_WALK; z_walk(z); z->garlic = -90; continue; }
             }
             if ((frame + i) % 4 == 0) {
                 int dmg = (int)(4 * slow) * (z->angry ? 2 : 1);
@@ -881,6 +884,8 @@ static void update_zombies(void)
             }
         } else {
             if (z->state != ZS_WALK) { z->state = ZS_WALK; z_walk(z); }
+            if (z->garlic < 0) z->garlic++;               /* sigue con cara de asco un rato tras cambiar de fila */
+            else if (z->garlic > 0) z->garlic = 0;
             z->x += z->dir * z->speed * slow;
             if (lv == LV_MG_PORTAL && portal_jump(&z->row, &z->x, z->dir)) { z->swim = lane[z->row] == LN_WATER; part(PS_PUFF, z->x, cell_y(z->row) + G.rh / 2, 0, 0, 0, 30); }
             if (z->type == ZT_POGO && !z->jumped) z->yoff = -fabsf(sinf(frame * 0.12f)) * 10; else z->yoff = 0;
@@ -938,6 +943,10 @@ static void draw_fog(void)
         gfx_draw_ex(IMG_FOG, sxw(x - 6), syw(y + 8), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.7f * G.ws, 0.55f * G.ws, 0, col, 0);
         gfx_draw_ex(IMG_FOG, sxw(x + 4), syw(y + 2), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.8f * G.ws, 0.7f * G.ws, 0, col, GFX_FLIPY);
         if (a > 0.5f) gfx_draw_ex(IMG_FOG, sxw(x - 2), syw(y - 4), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
+        if (r == 0) {                                /* fila de arriba: un borde suave sobre la valla en vez de un corte recto */
+            u32 c2 = ((u32)(a * 140) << 24) | 0xF0ECEC;
+            gfx_draw_ex(IMG_FOG, sxw(x), syw(y - G.rh * 0.55f), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.8f * G.ws, 0.5f * G.ws, 0, c2, 0);
+        }
         gfx_draw_ex(IMG_FOG, sxw(x + 8), syw(y - 10), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
     }
 }
@@ -1376,6 +1385,26 @@ static void update_plant(Plant *p, int r, int c)
         if (p->state == 1 && reanim_done(&p->anim)) { p->state = 0; plant_set_idle(p); }
         break;
     }
+    case PK_SPLIT: {     /* guisantralla: un guisante hacia delante y dos hacia atras (como el PC) */
+        if (p->timer > 0) p->timer--;
+        int front = z_ahead(r, px, 2000, 0) != NULL, back = 0;
+        for (int k = 0; k < MAXZ; k++) if (z_hittable(&Z[k]) && Z[k].row == r && !Z[k].balloon && !z_submerged(&Z[k]) && Z[k].x < px && Z[k].x > G.x0 - 10) back = 1;
+        if ((front || back) && p->timer <= 0) {
+            p->timer = d->rate;
+            if (front) { Proj *q = new_proj(PJ_PEA, r, px + 14, cy_c(r, c) + G.rh * 0.30f + pot_lift_y(r, c)); if (q) q->x0 = px - 4; p->aux = 18; }
+            if (back) { p->fire_in = 2; p->shot_at = 1; }
+            sfx_play_vol(rand() & 1 ? SFX_THROW : SFX_THROW2, 200);
+        }
+        if (p->aux > 0) p->aux--;
+        if (p->fire_in > 0 && --p->shot_at <= 0) {
+            Proj *q = new_proj(PJ_PEA, r, px - 14, cy_c(r, c) + G.rh * 0.30f + pot_lift_y(r, c));
+            if (q) { q->vx = -q->vx; q->x0 = px + 4; }
+            p->fire_in--; p->shot_at = 22; p->state = 18;   /* state: retroceso de la boca de atras */
+            if (p->fire_in == 0) sfx_play_vol(rand() & 1 ? SFX_THROW : SFX_THROW2, 200);
+        }
+        if (p->state > 0) p->state--;
+        break;
+    }
     case PK_GLOOM: {     /* seta melancolica: infla los mofletes y suelta humo 4 veces alrededor (3x3) */
         if (p->timer > 0) p->timer--;
         int near = 0;
@@ -1538,7 +1567,7 @@ static void update_projectiles(void)
             q->row = (int)((q->y - G.y0) / G.rh);
             if (q->x < G.x0 - 20 || q->x > view_right() || q->y < G.camy || q->y > G.y0 + G.rows * G.rh) { q->alive = 0; continue; }
         }
-        if (q->x > q->maxx) { q->alive = 0; continue; }
+        if (q->x > q->maxx || q->x < G.x0 - 30) { q->alive = 0; continue; }
         /* plantorcha: el guisante pasa a ser de fuego */
         int c = col_of(q->x);
         if (c >= 0 && c < COLS && P[q->row][c][1].alive && P[q->row][c][1].type == PL_TORCHWOOD && fabsf(q->x - (cell_x(c) + G.cw / 2)) < 3) {
@@ -1552,8 +1581,9 @@ static void update_projectiles(void)
             if (!z_hittable(z) || (z->row != q->row && z->type != ZT_BOSS)) continue;
             if (z->balloon && q->kind != PJ_SPIKE && q->kind != PJ_STAR) continue;
             if (z_submerged(z)) continue;
-            float back = first && q->x0 < q->x ? q->x0 : q->x - q->vx;   /* tramo recorrido este tick */
-            if (z->type == ZT_BOSS ? q->x >= cell_x(7) : (q->x >= z->x - 8 && back <= z->x + 10)) {
+            float back = first ? q->x0 : q->x - q->vx;   /* tramo recorrido este tick (hacia atras: guisantralla) */
+            float lo = back < q->x ? back : q->x, hi = back < q->x ? q->x : back;
+            if (z->type == ZT_BOSS ? q->x >= cell_x(7) : (hi >= z->x - 8 && lo <= z->x + 10)) {
                 if (z->balloon && q->kind == PJ_SPIKE) { z->balloon = 0; z->speed = 0.064f; sfx_play(SFX_BALLOON_POP); z_anim(z, zd(z)->walk_s, zd(z)->walk_e, 1); }
                 else {
                     z_damage(z, q->dmg, 1, q->kind == PJ_SNOW);
@@ -2258,6 +2288,18 @@ int board_update(void)
     }
     if (state == ST_PLAY) wave_timer = 9999;
 #endif
+#if defined(AUTOTEST) && defined(AT_E9)
+    /* errores9: guisantralla (delante y detras), ajo con cara de asco, playero entrando en la piscina */
+    if (state == ST_PLAY && state_timer == 20) {
+        reanim_get(RE_TC_GARLIC); reanim_get(RE_LILYPAD);
+        plant_at(0, 4, PL_SPLITPEA); plant_at(1, 5, PL_GARLIC); plant_at(5, 2, PL_SPLITPEA); plant_at(4, 6, PL_SPLITPEA);
+        spawn_zombie(ZT_NORMAL, 0, cell_x(1)); spawn_zombie(ZT_NORMAL, 1, cell_x(7)); spawn_zombie(ZT_DUCKY, 2, cell_x(9) + 10);
+        spawn_zombie(ZT_CONE, 5, cell_x(8)); spawn_zombie(ZT_NORMAL, 4, cell_x(3));
+        for (int k = 0; k < MAXZ; k++) if (Z[k].alive) Z[k].speed *= 2;
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY) wave_timer = 9999;
+#endif
 #if defined(AUTOTEST) && defined(AT_GLOOM)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_GLOOM, PL_CACTUS, PL_COBCANNON, PL_GATLING };
@@ -2326,7 +2368,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM) && !defined(AT_E7)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM) && !defined(AT_E7) && !defined(AT_E9)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -2416,6 +2458,19 @@ static void draw_gloom(Plant *p, float cx, float base, u32 col)
         float hh = img_h(G_HEAD) * k;
         if (lid) gfx_draw_ex(lid, sxw(hx), syw(hy - hh * 0.16f), img_w(lid) / 2.0f, img_h(lid) / 2.0f, hw * 0.78f / img_w(lid) * G.ws, k * G.ws, 0, col, 0);
     }
+}
+
+/* guisantralla armada con las piezas del PC: 1478 cabeza doble, 1479 tallo y hojas */
+static void draw_splitpea(Plant *p, float cx, float base, u32 col)
+{
+    enum { S_HEAD = 1478, S_BODY = 1479 };
+    float bw = img_w(S_BODY), bh = img_h(S_BODY), hw = img_w(S_HEAD), hh = img_h(S_HEAD);
+    float sway = sinf(frame * 0.06f + cx * 0.1f);
+    gfx_draw_ex(S_BODY, sxw(cx), syw(base + 1), bw / 2, bh, G.ws, G.ws, 0, col, 0);
+    /* la union del tallo con la cabeza esta en (0.56, 0.78) de la cabeza; al disparar la cabeza se echa hacia atras */
+    float kick = (p->aux > 0 ? -sinf(p->aux * 3.14159f / 18) * 2.5f : 0) + (p->state > 0 ? sinf(p->state * 3.14159f / 18) * 2.5f : 0);
+    float sq = 1 - 0.05f * ((p->aux > 0 ? sinf(p->aux * 3.14159f / 18) : 0) + (p->state > 0 ? sinf(p->state * 3.14159f / 18) : 0));
+    gfx_draw_ex(S_HEAD, sxw(cx + kick + sway * 0.8f), syw(base + 1 - bh + 2), hw * 0.56f, hh * 0.78f, G.ws * sq, G.ws * (2 - sq), 0, col, 0);
 }
 
 static void draw_progress(void)
@@ -2577,10 +2632,19 @@ static void draw_zombie(Zombie *z, float base)
     float yo = z->yoff + z->dy + (z->balloon ? -G.rh * 0.6f : 0);
     if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? (z->jumped ? 0.9f : 0.2f) : z->type == ZT_SNORKEL ? -0.12f : 0.22f);   /* nadando (el buzo ya va bajo en su animacion) */
     if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
-    else if (z->state < ZS_DYING && !z->under && !(z->inwater && z->type == ZT_DOLPHIN)) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
+    else if (z->state < ZS_DYING && !z->under && !z->inwater) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped) gfx_noclip(); return; }   /* invisibles: solo su sombra */
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && state == ST_PLAY) col = (col & 0x00FFFFFF) | 0x90000000;
+    /* cara de asco (ajo): la cabeza 19 del zombi normal se cambia por la del PC con la lengua fuera */
+    int yuck = z->garlic != 0 && zd(z)->re == RE_ZOMBIE && z->state < ZS_DYING && z->dir < 0 && !(z->anim.hide_mask[0] & (1u << 19));
+    if (yuck) z->anim.hide_mask[0] |= 1u << 19;
     draw_anim_at(&z->anim, z->x + z->dxo, base + 1 + yo, col, z->dir > 0);
+    if (yuck) {
+        float hx, hy; int img;
+        if (z_track_pos(z, 19, &hx, &hy, &img))
+            gfx_draw_ex(IMG_YUCK, sxw(hx), syw(hy - img_h(img) / 2.0f - 1), img_w(IMG_YUCK) / 2.0f, 0, G.ws, G.ws, 0, col, 0);
+        z->anim.hide_mask[0] &= ~(1u << 19);
+    }
     if (z->butter > 0 && z->state < ZS_DYING) {            /* mantequilla en la cabeza */
         float hx, hy; int img;
         if (z_track_pos(z, 19, &hx, &hy, &img)) draw_world_c(IMG_BUTTER, hx, hy - 4, 1, WHITE);
@@ -2670,6 +2734,12 @@ void board_draw(void)
                     draw_anim_at(&m->anim, cell_x(c), base + myo, WHITE, 0);
                     continue;
                 }
+                if (p->type == PL_SPLITPEA) {
+                    if (lane[r] != LN_WATER && !P[r][c][0].alive)
+                        gfx_draw_ex(IMG_SHADOW, sxw(cell_x(c) + G.cw / 2), syw(base), 28, 11, 0.45f * G.ws, 0.45f * G.ws, 0, 0x50FFFFFF, 0);
+                    draw_splitpea(p, cell_x(c) + G.cw / 2, base + (P[r][c][0].alive ? pot_lift(r, c) : 0), WHITE);
+                    continue;
+                }
                 if (p->type == PL_GLOOM) {
                     float gyo = P[r][c][0].alive ? pot_lift(r, c) : 0;
                     draw_gloom(p, cell_x(c) + G.cw / 2, base + gyo, p->sleeping ? 0xFFB0B0B0 : WHITE);
@@ -2747,6 +2817,11 @@ void board_draw(void)
         if (held >= 0 && !bad) {                 /* la planta elegida se ve en la casilla, como en el PvZBV */
             static ReAnim ghost;
             int t = seed_type(held); const PlantDef *d = pdef(t);
+            if (t == PL_SPLITPEA) {
+                static Plant sp; sp.type = PL_SPLITPEA;
+                draw_splitpea(&sp, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF);
+                goto ghost_done;
+            }
             if (t == PL_GLOOM) {
                 static Plant gp; gp.type = PL_GLOOM;
                 draw_gloom(&gp, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF);

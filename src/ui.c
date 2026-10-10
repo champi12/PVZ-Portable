@@ -90,6 +90,7 @@ static const char *const tc_names[PL_COUNT - PL_J2ME_COUNT][LANG_COUNT] = {
     { "GARLIC", "AIL", "KNOBLAUCH", "AGLIO", "ALHO", "AJO" },
     { "PUMPKIN", "CITROUILLE", "KÜRBIS", "ZUCCA", "ABÓBORA", "CALABAZA" },
     { "GLOOM-SHROOM", "CHAMPI-SOMBRE", "TRÜBSAL-PILZ", "FUNGO TETRO", "COGUMELO SOMBRIO", "SETA MELANCÓLICA" },
+    { "SPLIT PEA", "POIS CASSÉ", "SPALTERBSE", "PISELLO DIVISO", "ERVILHA PARTIDA", "GUISANTRALLA" },
 };
 static const char *const tc_descs[PL_COUNT - PL_J2ME_COUNT][LANG_COUNT] = {
     { "GATLING PEAS SHOOT FOUR PEAS AT A TIME.", "LE MITRAILLE-POIS TIRE QUATRE POIS À LA FOIS.", "DIE GATLING-ERBSE SCHIESST VIER ERBSEN AUF EINMAL.",
@@ -122,6 +123,12 @@ static const char *const tc_descs[PL_COUNT - PL_J2ME_COUNT][LANG_COUNT] = {
       "IL FUNGO TETRO SPRIGIONA FUMI PESANTI TUTTO INTORNO. DORME DI GIORNO.",
       "O COGUMELO SOMBRIO SOLTA FUMAÇA PESADA AO SEU REDOR. DORME DE DIA.",
       "LA SETA MELANCÓLICA SUELTA HUMO DENSO A SU ALREDEDOR. DUERME DE DÍA." },
+    { "SPLIT PEAS SHOOT FORWARD AND BACKWARD.|DAMAGE: NORMAL|RANGE: FORWARD AND BACKWARD|FIRING SPEED: 1X FORWARD, 2X BACKWARD",
+      "LE POIS CASSÉ TIRE DEVANT ET DERRIÈRE.|DÉGÂTS : NORMAUX|PORTÉE : DEVANT ET DERRIÈRE|CADENCE : 1X DEVANT, 2X DERRIÈRE",
+      "DIE SPALTERBSE SCHIESST NACH VORNE UND NACH HINTEN.|SCHADEN: NORMAL|REICHWEITE: VORNE UND HINTEN|FEUERRATE: 1X VORNE, 2X HINTEN",
+      "IL PISELLO DIVISO SPARA IN AVANTI E ALL'INDIETRO.|DANNO: NORMALE|RAGGIO: AVANTI E INDIETRO|CADENZA: 1X AVANTI, 2X INDIETRO",
+      "A ERVILHA PARTIDA ATIRA PARA A FRENTE E PARA TRÁS.|DANO: NORMAL|ALCANCE: FRENTE E TRÁS|CADÊNCIA: 1X FRENTE, 2X TRÁS",
+      "LA GUISANTRALLA DISPARA HACIA DELANTE Y HACIA ATRÁS.|DAÑO: NORMAL|ALCANCE: DELANTE Y DETRÁS|VELOCIDAD DE DISPARO: 1X DELANTE, 2X DETRÁS" },
 };
 const char *plant_name(int t)
 {
@@ -178,7 +185,13 @@ void ui_title_bar(float x, float y, float w, int end, int mid, const char *txt, 
     gfx_noclip();
     gfx_draw(end, x, y, WHITE, 0);
     gfx_draw(end, x + w - ew, y, WHITE, GFX_FLIPX);
-    if (txt) text_draw_centered(font, x + w / 2, y + (img_h(end) - 23) / 2 + 2, txt, 0xFFE8E8E8);
+    if (txt) {                                    /* si el nombre no cabe se encoge para quedar dentro */
+        float room = w - 2 * ew + 16, tw = text_width(font, txt);
+        if (tw > room) text_scale = room / tw;
+        float th = 23 * text_scale;
+        text_draw_centered(font, x + w / 2, y + (img_h(end) - th) / 2 + 2 * text_scale, txt, 0xFFE8E8E8);
+        text_scale = 1;
+    }
 }
 
 void ui_panel(float x, float y, float w, float h, int corner, int edge, int body)
@@ -191,8 +204,8 @@ void ui_panel(float x, float y, float w, float h, int corner, int edge, int body
     gfx_noclip();
     gfx_clip((int)x, (int)y + 42, (int)w, (int)h - 84);
     for (float ty = y + 42; ty < y + h - 42; ty += 42) {     /* laterales: el borde girado 90 grados */
-        gfx_draw_ex(edge, x + 21, ty + 21, 21, 21, 1, 1, -1.5707963f, WHITE, 0);
-        gfx_draw_ex(edge, x + w - 21, ty + 21, 21, 21, 1, 1, 1.5707963f, WHITE, 0);
+        gfx_draw_ex(edge, x + 21, ty + 21, 21, 21, 1, 1, -1.5707963f, WHITE, GFX_NEAREST);
+        gfx_draw_ex(edge, x + w - 21, ty + 21, 21, 21, 1, 1, 1.5707963f, WHITE, GFX_NEAREST);
     }
     gfx_noclip();
     gfx_draw(corner, x, y, WHITE, 0);

@@ -255,7 +255,7 @@ void gfx_draw_ex(int id, float x, float y, float ax, float ay,
     float c = cosf(rot), s = sinf(rot);
     for (int i = 0; i < e->ntiles; i++) {
         PakTile *t = &im->tiles[i];
-        bind_tile(id, t, 1);
+        bind_tile(id, t, !(flags & GFX_NEAREST));
         float lx[4] = { t->x, t->x + t->w, t->x, t->x + t->w };
         float ly[4] = { t->y, t->y, t->y + t->h, t->y + t->h };
         float tu[4] = { 0, t->w, 0, t->w };

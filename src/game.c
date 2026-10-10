@@ -218,7 +218,7 @@ void game_update(void)
     if (frame == 240) { alm_detail = 0; alm_page = 2; almanac_build(); alm_cur = 5; }
     if (frame == 280) almanac_open_detail();
     if (frame == 320) { alm_detail = 0; alm_page = 3; almanac_open_detail(); }
-    if (frame == 360) { scene = SC_REWARD; reward = PL_POTATOMINE; timer = 0; alm_page = 1; alm_n = 1; alm_list[0] = reward; alm_cur = 0; almanac_open_detail(); alm_detail = 0; }
+    if (frame == 360) { scene = SC_REWARD; reward = PL_SPLITPEA; timer = 0; alm_page = 1; alm_n = 1; alm_list[0] = reward; alm_cur = 0; almanac_open_detail(); alm_detail = 0; }
     if (frame == 400) { level = 40; go_dave_or_board(); }
     if (frame == 440) { menu_sel = 0; scene = SC_TITLE; confirm = 1; }
     if (frame == 480) { confirm = 0; scene = SC_LEVELS; sel_level = 13; max_level = 17; }
@@ -675,21 +675,19 @@ static void draw_reward(void)
         int f = (frame / 6 + k) % 5;
         gfx_draw_region(150, f * 9, 0, 9, 9, x - 4, y - 4, WHITE);
     }
-    text_draw_centered(FONT_BIG, 300, by + 14, plant_name(reward), 0xFF103060);
+    ui_title_bar(146, by + 10, 300, 595, 158, plant_name(reward), FONT_BIG);   /* el nombre en su barra, como en el almanaque */
     float px = 40, py = 118, pw = 400, ph = 120;
     gfx_rect(px - 3, py - 3, pw + 6, ph + 6, 0xFF14306A);
-    float k = ph / img_h(1476);                   /* el girasol entero a la izquierda y papel a la derecha */
-    gfx_draw_ex(1476, px, py, 0, 0, k, k, 0, WHITE, 0);
-    gfx_draw_region(1476, 280, 60, (int)(pw - img_w(1476) * k) + 1, (int)ph, px + img_w(1476) * k - 1, py, WHITE);
+    gfx_draw(1480, px, py, WHITE, 0);              /* pergamino liso con el girasol de la DS */
     char d[256]; const char *src = plant_desc(reward); int n = 0;
     while (src[n] && src[n] != '|' && n < (int)sizeof(d) - 1) {      /* solo la primera frase */
         d[n] = src[n]; n++;
         if ((src[n - 1] == '.' || src[n - 1] == '!') && src[n] == ' ') break;
     }
     d[n] = 0;
-    int nl = ui_text_wrap(FONT_SMALL, 0, 0, 180, 16, d, 0, 0);
+    int nl = ui_text_wrap(FONT_SMALL, 0, 0, 200, 16, d, 0, 0);
     ui_wrap_center = 1;
-    ui_text_wrap(FONT_SMALL, px + 312, py + ph / 2 - nl * 16 / 2.0f, 180, 16, d, 0xFF101010, 1);
+    ui_text_wrap(FONT_SMALL, px + 278, py + ph / 2 - nl * 16 / 2.0f, 200, 16, d, 0xFF101010, 1);
     ui_wrap_center = 0;
     if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 248, XS(XS_X_CONTINUE), 0xFF103060);
 }
@@ -705,7 +703,7 @@ static void draw_mini(void)
         /* la imagen va detras del marco l61, ajustada a su ventana (x 15-71, y 6-49) */
         gfx_draw_ex(1329 + i, fx + 43, fy + 27.5f, iw / 2, img_h(1329) / 2.0f, 0.8f, 0.8f, 0, WHITE, 0);
         gfx_draw(1341, fx, fy, i == mini_sel ? WHITE : 0xFFB0B0B0, 0);
-        if (mini_done & (1 << i)) gfx_draw(1342, fx + 7, fy + 2, WHITE, 0);   /* trofeo: esquina de arriba a la izquierda */
+        if (mini_done & (1 << i)) gfx_draw(1342, fx + 3, fy - 1, WHITE, 0);   /* trofeo: esquina de arriba a la izquierda */
         /* el nombre va en la placa gris de abajo del marco, como en el PC */
         text_scale = 0.62f;
         float lh = 11, pw = fw - 14, pcy = fy + 69.5f;

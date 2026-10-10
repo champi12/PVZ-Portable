@@ -375,3 +375,10 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Trofeo de minijuego en la esquina de arriba a la izquierda del marco.
 - Almanaque: fondo de pergamino de la DS con el girasol (plantas, 1476) y el zombi (zombis, 1477), sacados de `ref/ds_menus.webp`. La lista de plantas muestra 5 filas y se desplaza con el cursor (49 plantas ya no caben).
 - Planta nueva: pantalla como la de la DS (sobre, nombre, primera frase de la descripción sobre el pergamino del girasol); la ficha completa solo en el almanaque.
+
+### Sesión 17 (errores9)
+- Guisantralla (PL_SPLITPEA, PK_SPLIT): armada con `tools/splitpea_parts.py` (1478 cabeza doble, 1479 tallo y hojas); 1 guisante delante y 2 detrás; sobres 1400/1440; premio del 4-4 (la melancólica pasa al 4-9). Los guisantes rectos ya chocan en los dos sentidos.
+- Ajo: cara de asco del PC (1481, `ref/zombi_partes.png`) en la cabeza 19 del zombi normal mientras muerde y un rato después, y SFX_YUCK.
+- Playero: sin chapoteo extra al caerle el brazo en el agua y sin sombra en la piscina (ningún nadador).
+- Pergaminos de la DS: trazo separado del papel y pintado sobre papel liso (1476/1477 almanaque más pequeños, 1480 planta nueva). Nombre de la planta nueva en su barra; los nombres largos se encogen para caber.
+- Paneles: los laterales girados se dibujan sin bilineal (GFX_NEAREST) para evitar líneas oscuras; niebla con borde suave sobre la valla.
