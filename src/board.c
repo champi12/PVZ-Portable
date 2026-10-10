@@ -74,7 +74,7 @@
 #define IMG_ZHEAD 282        /* cabeza de zombi de la barra de progreso */
 #define IMG_WMELON 963       /* melon de hielo (Tencent 263) */
 #define IMG_COB 1195         /* mazorca del mazorcanon (Tencent 495) */
-#define IMG_TARGET 1088      /* diana roja para apuntar el mazorcanon (Tencent 388) */
+#define IMG_TARGET 1098      /* diana roja para apuntar el mazorcanon (Tencent 398) */
 #define IMG_FOG 1390         /* nube de niebla (mancha suave generada por add_tencent.py) */
 #define IMG_PFLAG 543        /* banderita de la barra de progreso */
 
@@ -145,6 +145,7 @@ typedef struct {
     int lcol;                 /* escalador: columna donde apoya la escalera (+1) */
     int garlic;               /* tiempo mordiendo un ajo */
     int flash;                /* zombis invisibles: se ven un momento al recibir un golpe */
+    float dxo;                /* desplazamiento de dibujo (delfin: la animacion lo lleva 36 px a la izquierda) */
     float dy;                 /* desplazamiento al cambiar de fila (ajo), vuelve a 0 */
     ReAnim anim;
 } Zombie;
@@ -464,7 +465,7 @@ static void z_walk(Zombie *z)
     else if (z->type == ZT_NEWSPAPER && z->angry) { s = 37; e = 47; }
     else if (z->type == ZT_LADDER && z->jumped) { s = 33; e = 44; }      /* ya sin escalera */
     else if (z->type == ZT_DANCER && !z->summoned) { s = 0; e = 13; }     /* entra haciendo el moonwalk */
-    else if (z->type == ZT_DOLPHIN) { if (!z->inwater) { s = 4; e = 13; } else if (z->jumped) { s = 52; e = 62; } }
+    else if (z->type == ZT_DOLPHIN) { if (!z->inwater && !z->ammo) { s = 4; e = 13; } else if (z->jumped) { s = 42; e = 51; } else { s = 35; e = 35; } }   /* en tierra, sin delfin, montado */
     else if (z->type == ZT_POGO && !z->jumped) { s = 39; e = 41; }
     else if (z->balloon) { s = 4; e = 7; }
     else if (z->type == ZT_SNORKEL && z->inwater) { s = 20; e = 21; }
@@ -478,7 +479,7 @@ static void z_eat(Zombie *z)
     if (z->inwater && d->re == RE_ZOMBIE) { s = 40; e = 49; }
     if (z->type == ZT_LADDER && !z->jumped) { s = 18; e = 23; }          /* come con la escalera en la mano */
     if (z->type == ZT_NEWSPAPER && z->angry) { s = 48; e = 53; }
-    if (z->type == ZT_DOLPHIN && !z->inwater) { s = 52; e = 62; }
+    if (z->type == ZT_DOLPHIN) { s = 52; e = 62; }
     z_anim(z, s, e, 1);
 }
 /* posicion en el mundo de una pista de la animacion 0 (para soltar brazo, cabeza, cono...) */
@@ -706,6 +707,9 @@ static void update_zombies(void)
 
         /* --- animaciones de una vez (romper el periodico, salir de la tierra, caer del globo, saltar) --- */
         if (z->state == ZS_SPECIAL) {
+            if (reanim_done(&z->anim) && z->type == ZT_DOLPHIN && z->ammo == 1) {   /* ya se ha subido al delfin */
+                z->ammo = 2; z->x -= 36; z->dxo = 36; z->speed = 0.2f; z->state = ZS_WALK; z_walk(z); continue;
+            }
             if (reanim_done(&z->anim) && z->type == ZT_JACK && z->summoned) {
                 sfx_play(SFX_EXPLOSION);
                 int c = col_of(z->x);
@@ -738,13 +742,16 @@ static void update_zombies(void)
                     z->x = z->jx0 - (z->timer ? 0 : 58);
                     z->jumped = 1; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z); z->jsnd = 0;
                 }
-            } else {                                  /* saltarin / delfin: brinco por encima de la planta */
+            } else if (z->type == ZT_DOLPHIN) {        /* salto del delfin (36-41): la animacion lo lleva 43 px a la izquierda */
+                if (reanim_done(&z->anim)) {
+                    z->x -= 43; z->dxo = 0; z->jumped = 1; z->ammo = 3; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z);
+                }
+            } else {                                  /* saltarin: brinco por encima de la planta */
                 float f = (++z->timer) / 60.0f;
                 if (f > 1) f = 1;
                 z->x = z->jx0 - G.cw * 1.3f * f;
                 z->yoff = -sinf(f * 3.14159f) * 24;
-                if (z->type == ZT_DOLPHIN) z->yoff = 0;     /* el salto ya esta en su animacion */
-                if (f >= 1) { z->yoff = 0; z->state = ZS_WALK; if (z->type == ZT_DOLPHIN) { z->jumped = 1; z->speed = 0.064f; } z_walk(z); }
+                if (f >= 1) { z->yoff = 0; z->state = ZS_WALK; z_walk(z); }
             }
             continue;
         }
@@ -762,6 +769,9 @@ static void update_zombies(void)
         if (water != z->inwater) {
             z->inwater = water;
             if (water) { part(PS_SPLASH, z->x, cell_y(z->row) + G.rh * 0.75f, 0, 0, 0, 40); sfx_play(SFX_ZOMBIE_ENTERING_WATER); }
+            if (water && z->type == ZT_DOLPHIN && !z->ammo) {     /* el delfin salta a la piscina y se sube (24-34) */
+                z->ammo = 1; z->state = ZS_SPECIAL; z_anim(z, 24, 34, 0); sfx_play(SFX_DOLPHIN_APPEARS); continue;
+            }
             if (z->state == ZS_EAT) z_eat(z); else z_walk(z);
         }
         if (z->type == ZT_JACK && z->x < bush_x()) {
@@ -830,7 +840,7 @@ static void update_zombies(void)
             Plant *p = top_plant(z->row, c);
             /* saltador / delfin / saltarin: pasan por encima (la nuez cascara-rabias los para) */
             int can_jump = (z->type == ZT_POLE || z->type == ZT_POGO || z->type == ZT_DOLPHIN) && !z->jumped;
-            if (z->type == ZT_DOLPHIN && !z->inwater) can_jump = 0;
+            if (z->type == ZT_DOLPHIN && z->ammo != 2) can_jump = 0;   /* solo montado en el delfin */
             if (p->type == PL_SQUASH) can_jump = 0;        /* la apisonaflor lo aplasta antes */
             if (can_jump) {
                 z->jx0 = z->x; z->timer = p->type == PL_TALLNUT; z->state = ZS_JUMP;
@@ -923,9 +933,11 @@ static void draw_fog(void)
         float a = fog_a[r][c < COLS ? c : COLS - 1] * k;
         if (a < 0.02f) continue;
         float x = cell_x(c) + G.cw / 2 + sinf(frame * 0.01f + r * 1.7f + c) * 4, y = cy_c(r, c < COLS ? c : COLS - 1) + G.rh / 2;
-        u32 col = ((u32)(a * 235) << 24) | 0xF0ECEC;          /* manchas suaves (1390) que se solapan: sin cuadros */
+        u32 col = ((u32)(a * 255) << 24) | 0xF0ECEC;          /* manchas suaves (1390) que se solapan: sin cuadros */
         gfx_draw_ex(IMG_FOG, sxw(x), syw(y), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.9f * G.ws, 0.75f * G.ws, 0, col, 0);
         gfx_draw_ex(IMG_FOG, sxw(x - 6), syw(y + 8), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.7f * G.ws, 0.55f * G.ws, 0, col, 0);
+        gfx_draw_ex(IMG_FOG, sxw(x + 4), syw(y + 2), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.8f * G.ws, 0.7f * G.ws, 0, col, GFX_FLIPY);
+        if (a > 0.5f) gfx_draw_ex(IMG_FOG, sxw(x - 2), syw(y - 4), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
         gfx_draw_ex(IMG_FOG, sxw(x + 8), syw(y - 10), img_w(IMG_FOG) / 2.0f, img_h(IMG_FOG) / 2.0f, 0.6f * G.ws, 0.5f * G.ws, 0, col, GFX_FLIPX);
     }
 }
@@ -1279,7 +1291,7 @@ static void update_plant(Plant *p, int r, int c)
         if (p->state == 0) {
             for (int i = 0; i < MAXZ; i++) {
                 Zombie *z = &Z[i];
-                if (z_hittable(z) && z->row == r && !z->balloon && fabsf(z->x - px) < G.cw * 1.1f) {
+                if (z_hittable(z) && z->row == r && !z->balloon && z->x - px < G.cw * 1.6f && px - z->x < G.cw * 0.9f) {   /* delante: hasta la planta de enfrente; detras: casilla de atras */
                     p->state = 1; p->aux = (int)(z->x); p->timer = 0; sfx_play(rand() & 1 ? SFX_SQUASH_HMM : SFX_SQUASH_HMM2);
                     reanim_play(&p->anim, RE_SQUASH, 5, 7, 1); break;            /* "hmm" mirando */
                 }
@@ -1423,7 +1435,7 @@ static void update_projectiles(void)
                     else { z_damage(z, q->dmg, 0, 0); burst(PS_GREENBIT, q->x, q->y, 2, 0.5f); }
                     q->alive = 0; continue;
                 }
-                q->vx += (dx / d * 2.2f - q->vx) * 0.12f; q->vy += (dy / d * 2.2f - q->vy) * 0.12f;
+                q->vx += (dx / d * 1.4f - q->vx) * 0.12f; q->vy += (dy / d * 1.4f - q->vy) * 0.12f;   /* ~ velocidad de un guisante */
                 q->row = z->row;
             }
             q->x += q->vx; q->y += q->vy;
@@ -1488,11 +1500,12 @@ static void update_projectiles(void)
             q->y += q->vy;
             int row = (int)((q->y - G.y0) / G.rh);
             if (row < first_row() || row > last_row()) { q->vy = -q->vy; q->y += q->vy * 2; row = (int)((q->y - G.y0) / G.rh); }
+            if (row != q->row) q->bounced = 0;          /* ya en otra fila: puede volver a golpear */
             q->row = row;
             q->t += 1;
             for (int k = 0; k < MAXZ; k++) {
                 Zombie *z = &Z[k];
-                if (z_hittable(z) && z->row == row && fabsf(z->x - q->x) < 12 && q->target != k) {
+                if (z_hittable(z) && z->row == row && fabsf(z->x - q->x) < 12 && q->target != k && !q->bounced) {
                     if (z->type == ZT_POLE && !z->jumped && z->state == ZS_WALK) {   /* el saltador salta la primera nuez */
                         z->jx0 = z->x; z->timer = 0; z->state = ZS_JUMP; z_anim(z, 13, 23, 0); z->anim.speed = 1.3f;
                         z->jsnd = sfx_play(SFX_POLEVAULT) + 1; q->target = k; continue;
@@ -1501,8 +1514,14 @@ static void update_projectiles(void)
                         explode(q->x, row, G.cw * 1.5f, 1, 1800, SFX_CHERRYBOMB, 1); boom_fx(q->x, cell_y(row) + G.rh / 2);
                         q->alive = 0; break;
                     }
-                    z_damage(z, 300, 1, 0); q->target = k; sfx_play(rand() & 1 ? SFX_BOWLINGIMPACT : SFX_BOWLINGIMPACT2);
-                    q->vy = (row <= first_row() ? 1 : row >= last_row() ? -1 : (rand() & 1 ? 1 : -1)) * G.rh / 36.0f;
+                    /* como el PC: cada golpe quita una cosa (la puerta, el casco o la vida) y la nuez rebota en diagonal */
+                    if (z->shield > 0) { int d = z->shield; quiet_dmg = 1; z_damage(z, d, 1, 0); quiet_dmg = 0; }
+                    else if (z->helm > 0) { int d = z->helm; quiet_dmg = 1; z_damage(z, d, 0, 0); quiet_dmg = 0; }
+                    else z_damage(z, zhp(z) + 10, 0, 0);
+                    q->target = k; q->bounced = 1; sfx_play(rand() & 1 ? SFX_BOWLINGIMPACT : SFX_BOWLINGIMPACT2);
+                    float v = G.rh / 36.0f;
+                    if (row <= first_row()) q->vy = v; else if (row >= last_row()) q->vy = -v;
+                    else q->vy = q->vy != 0 ? -q->vy : (rand() & 1 ? v : -v);
                     break;
                 }
             }
@@ -1658,7 +1677,7 @@ static void update_belt(void)
 {
     if (!conveyor) return;
     if (--belt_timer <= 0 && belt_n < 8) {
-        belt_timer = BOWLING ? 450 : 700;
+        belt_timer = BOWLING ? 330 : 700;
         int t;
         if (BOWLING) t = lv == LV_MG_BOWL && rand() % 5 == 0 ? PL_REDNUT : PL_BOWLNUT;
         else if (lv == LV_MG_PORTAL) { static const int sp[] = { PL_PEASHOOTER, PL_REPEATER, PL_SNOWPEA, PL_WALLNUT, PL_CHERRYBOMB, PL_SQUASH, PL_JALAPENO, PL_POTATOMINE, PL_TALLNUT, PL_GATLING }; t = sp[rnd(0, 9)]; }
@@ -2227,6 +2246,18 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 900) { plant_at(5, 6, PL_CHERRYBOMB); }
     if (state == ST_PLAY) wave_timer = 9999;
 #endif
+#if defined(AUTOTEST) && defined(AT_E7)
+    if (state == ST_PLAY && state_timer == 20) {
+        static const int pl[] = { PL_PLANTERN, PL_MELONPULT, PL_WINTERMELON, PL_GLOOM, PL_LILYPAD, PL_WALLNUT, PL_PEASHOOTER, PL_SQUASH };
+        for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
+        plant_at(0, 4, PL_PLANTERN); plant_at(1, 1, PL_MELONPULT); plant_at(4, 1, PL_WINTERMELON); plant_at(5, 3, PL_GLOOM); P[5][3][1].sleeping = 0;
+        plant_at(3, 4, PL_LILYPAD); plant_at(3, 4, PL_WALLNUT); plant_at(2, 0, PL_LILYPAD); plant_at(2, 0, PL_PEASHOOTER);
+        plant_at(0, 2, PL_PEASHOOTER); plant_at(0, 3, PL_SQUASH);
+        spawn_zombie(ZT_SNORKEL, 2, cell_x(8) + 10); spawn_zombie(ZT_DOLPHIN, 3, cell_x(9) + 10); spawn_zombie(ZT_NORMAL, 0, cell_x(8)); spawn_zombie(ZT_NORMAL, 5, cell_x(6));
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY) wave_timer = 9999;
+#endif
 #if defined(AUTOTEST) && defined(AT_GLOOM)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_GLOOM, PL_CACTUS, PL_COBCANNON, PL_GATLING };
@@ -2295,7 +2326,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM) && !defined(AT_E7)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();
@@ -2329,7 +2360,7 @@ int board_update(void)
     tick_acc += 100.0f / 60.0f;
     while (tick_acc >= 1.0f) {
         tick_acc -= 1.0f;
-        for (int i = 0; i < nseeds; i++) if (refresh[i] > 0) refresh[i]--;
+        for (int i = 0; i < nseeds; i++) if (refresh[i] > 0) refresh[i] = ls_setup ? 0 : refresh[i] - 1;   /* preparando la defensa: recarga al instante */
         update_belt();
         update_suns();
         if (lv == LV_MG_PORTAL && state == ST_PLAY && --portal_timer <= 0) { portal_timer = 3000; mg_portal_reset(); }
@@ -2363,22 +2394,17 @@ static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
  * parpadea, duerme de dia y infla los mofletes al echar humo */
 static void draw_gloom(Plant *p, float cx, float base, u32 col)
 {
-    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_RING_L = 1470, G_RING_D = 1469, G_RING_T = 1468, G_BODY = 1473 };
+    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_BODY = 1473 };
     float bw = img_w(G_BODY), bh = img_h(G_BODY);
     float hw = img_w(G_HEAD), hh = img_h(G_HEAD);
     float breath = 1 + 0.03f * sinf(frame * 0.07f + cx * 0.1f);
-    float hx = cx, hy = base - bh * 0.75f - hh * 0.42f;
+    hw *= 0.85f; hh *= 0.85f;                    /* del tamano de las demas setas */
+    float hx = cx, hy = base - bh * 0.45f - hh * 0.36f;
     int head = G_HEAD; float hs = 1;
     if (p->state == 1 && !p->sleeping) {
         int ph = p->aux % 28;
         if (ph >= 8 && ph < 16) { head = G_PUFF1; hs = 1.25f; } else if (ph >= 16 && ph < 22) { head = G_PUFF2; hs = 1.35f; }
     }
-    /* bocas de tubo (detras de la cabeza) */
-    gfx_draw_ex(G_RING_L, sxw(hx - hw * 0.5f), syw(hy + 2), img_w(G_RING_L) / 2.0f, img_h(G_RING_L) / 2.0f, G.ws, G.ws, 0, col, 0);
-    gfx_draw_ex(G_RING_L, sxw(hx + hw * 0.5f), syw(hy + 2), img_w(G_RING_L) / 2.0f, img_h(G_RING_L) / 2.0f, G.ws, G.ws, 0, col, GFX_FLIPX);
-    gfx_draw_ex(G_RING_D, sxw(hx - hw * 0.36f), syw(hy - hh * 0.36f), img_w(G_RING_D) / 2.0f, img_h(G_RING_D) / 2.0f, G.ws, G.ws, 0, col, 0);
-    gfx_draw_ex(G_RING_D, sxw(hx + hw * 0.36f), syw(hy - hh * 0.36f), img_w(G_RING_D) / 2.0f, img_h(G_RING_D) / 2.0f, G.ws, G.ws, 0, col, GFX_FLIPX);
-    gfx_draw_ex(G_RING_T, sxw(hx), syw(hy - hh * 0.5f), img_w(G_RING_T) / 2.0f, img_h(G_RING_T) / 2.0f, G.ws, G.ws, 0, col, 0);
     gfx_draw_ex(G_BODY, sxw(cx), syw(base - bh / 2 + 1), bw / 2, bh / 2, G.ws, G.ws, 0, col, 0);
     float sw = hw * hs / img_w(head), sh = hh * hs / img_h(head);
     if (head != G_HEAD) { sw = hw * hs / img_w(head) * 0.92f; sh = sw; }
@@ -2546,12 +2572,12 @@ static void draw_zombie(Zombie *z, float base)
     if (z->state >= ZS_DYING && z->fade < 100) col = (col & 0x00FFFFFF) | ((u32)(z->fade * 255 / 100) << 24);
     if (z->type == ZT_BOSS) return;   /* se dibuja aparte, encima del seto */
     float yo = z->yoff + z->dy + (z->balloon ? -G.rh * 0.6f : 0);
-    if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? 0.55f : 0.22f);     /* nadando: la animacion ya esconde las piernas */
+    if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? 0.55f : z->type == ZT_SNORKEL ? -0.12f : 0.22f);   /* nadando (el buzo ya va bajo en su animacion) */
     if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
     else if (z->state < ZS_DYING && !z->under && !(z->inwater && z->type == ZT_DOLPHIN)) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped) gfx_noclip(); return; }   /* invisibles: solo su sombra */
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && state == ST_PLAY) col = (col & 0x00FFFFFF) | 0x90000000;
-    draw_anim_at(&z->anim, z->x, base + 1 + yo, col, z->dir > 0);
+    draw_anim_at(&z->anim, z->x + z->dxo, base + 1 + yo, col, z->dir > 0);
     if (z->butter > 0 && z->state < ZS_DYING) {            /* mantequilla en la cabeza */
         float hx, hy; int img;
         if (z_track_pos(z, 19, &hx, &hy, &img)) draw_world_c(IMG_BUTTER, hx, hy - 4, 1, WHITE);
@@ -2650,7 +2676,10 @@ void board_draw(void)
                     gfx_draw_ex(IMG_SHADOW, sxw(cell_x(c) + G.cw / 2), syw(base), 28, 11, 0.45f * G.ws, 0.45f * G.ws, 0, 0x50FFFFFF, 0);
                 float yo = (l >= 1 && P[r][c][0].alive) ? pot_lift(r, c) : 0;
                 float dx = p->type == PL_COBCANNON ? G.cw * 0.5f : 0;      /* el mazorcanon ocupa dos casillas */
-                draw_anim_at(&p->anim, cell_x(c) + G.cw / 2 + p->dx + dx, base + yo + p->dy + (l == 2 ? 2 : 0), p->sleeping ? 0xFFC0C0C0 : WHITE, 0);
+                float pdy = 0;
+                if (p->type == PL_MELONPULT || p->type == PL_WINTERMELON) dx -= 4;   /* un poco mas atras */
+                if (p->type == PL_PLANTERN) { dx -= 5; pdy = -4; }         /* sus hojas de la derecha le descentraban la caja */
+                draw_anim_at(&p->anim, cell_x(c) + G.cw / 2 + p->dx + dx, base + yo + p->dy + pdy + (l == 2 ? 2 : 0), p->sleeping ? 0xFFC0C0C0 : WHITE, 0);
                 if (p->ladder) draw_world_c(IMG_LADDER, cell_x(c) + G.cw * 0.85f, base + yo - img_h(IMG_LADDER) / 2.0f + 1, 1, WHITE);   /* apoyada delante */
             }
         }
@@ -2701,7 +2730,7 @@ void board_draw(void)
     for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].type == ZT_BOSS && Z[i].anim.def) {
         /* Dr. Zombi (Zombistein robot): el J2ME solo muestra piernas y brazo; origen a la derecha */
         u32 col = Z[i].state >= ZS_DYING ? ((u32)(Z[i].fade * 255 / 400) << 24) | 0xFFFFFF : WHITE;
-        reanim_draw(&Z[i].anim, sxw(view_right() - 330), syw(G.y0 + 30), G.ws, col);
+        reanim_draw(&Z[i].anim, sxw(280), syw(G.y0 + 30), G.ws, col);   /* x del mundo del J2ME (antes con la camara en 130) */
         float hpf = (float)Z[i].hp / zombie_defs[ZT_BOSS].hp;
         gfx_rect(SCREEN_W - 112, SCREEN_H - 26, 104, 8, 0xA0000000);
         gfx_rect(SCREEN_W - 110, SCREEN_H - 24, 100 * hpf, 4, 0xFF2020FF);

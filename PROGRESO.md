@@ -348,3 +348,16 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
   piscina y un solo abanderado. Playero pierde también el brazo de nadar (pista 18). Casco del deportista con
   sonido de plástico. Última resistencia: SELECT empieza de verdad el siguiente asalto. El saltador salta la
   primera nuez de los bolos; la nuez explosiva es la nuez del J2ME tenida de rojo. Niebla más espesa.
+
+### ✅ Sesión 14 — errores7
+- No se tocan las imágenes originales del juego base (los sobres del J2ME quedan como estaban).
+- Números de 2 cifras de los sobres nuevos centrados en el globo. Púa del cactus/espadaña reducida al 60 %.
+- Seta melancólica sin las bocas laterales y más baja. Niebla más espesa (4 manchas por casilla).
+- Apisonaflor: alcanza al zombi que se come la planta de delante (1,6 casillas) y también hacia atrás.
+- Delfín: entra en la piscina montado (24-34), va montado (35) y rápido, salta la primera planta (36-41) y sigue
+  nadando sin delfín (42-51); los desplazamientos de la animación se pasan a la posición (sin saltos atrás).
+- Última resistencia: entre asaltos los sobres están siempre cargados. Diana del mazorcañón: imagen 398 del Tencent.
+  Pinchos de la espadaña a velocidad de guisante. Dr. Zombi en x=280 (la cámara del tejado ahora está en 0).
+- Melonpultas 4 px más atrás; planterna centrada y más alta. Buzo nadando en su fila.
+- Bolos como el PC: cada golpe quita la puerta, el casco o la vida; la nuez rebota en diagonal y no vuelve a golpear
+  hasta cambiar de fila; cinta cada 3,3 s.

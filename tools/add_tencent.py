@@ -169,7 +169,9 @@ if len(sys.argv) > 8:
         for k, b in enumerate(BOXES):
             c = cut(gim, b); put(1460 + k, c.resize((max(1, round(c.width * 0.42)), max(1, round(c.height * 0.42))), Image.LANCZOS))
     sp = os.path.join(ref, 'pua_cactus.png')
-    if os.path.exists(sp): fill(1474); put(1474, Image.open(sp).convert('RGBA'))
+    if os.path.exists(sp):
+        fill(1474); sim = Image.open(sp).convert('RGBA')
+        put(1474, sim.resize((round(sim.width * 0.6), round(sim.height * 0.6)), Image.LANCZOS))   # al tamano de las demas puas
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter
