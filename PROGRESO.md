@@ -374,3 +374,4 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Niebla: la mancha 1390 nunca tiene alfa 0 (el bilineal de la PSP mezclaba con el negro transparente y salían líneas oscuras).
 - Trofeo de minijuego en la esquina de arriba a la izquierda del marco.
 - Almanaque: fondo de pergamino de la DS con el girasol (plantas, 1476) y el zombi (zombis, 1477), sacados de `ref/ds_menus.webp`. La lista de plantas muestra 5 filas y se desplaza con el cursor (49 plantas ya no caben).
+- Planta nueva: pantalla como la de la DS (sobre, nombre, primera frase de la descripción sobre el pergamino del girasol); la ficha completa solo en el almanaque.

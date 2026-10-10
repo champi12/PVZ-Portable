@@ -660,19 +660,38 @@ static void draw_dave(void)
 }
 
 /* planta nueva: ficha como la del almanaque con el titulo "¡ENCONTRASTE UNA SEMILLA NUEVA!" */
+/* planta nueva como en la DS: sobre en su recuadro, el nombre al lado y una descripcion corta (la primera
+ * frase del almanaque) sobre el pergamino del girasol; la ficha completa queda para el almanaque */
 static void draw_reward(void)
 {
     ui_frame_bg();
-    text_draw_centered(FONT_MED, SCREEN_W / 2, 8, TXT[51], 0xFF103060);
-    draw_card(1, reward, alm_scroll, 22);
-    /* destellos alrededor del sobre */
-    for (int k = 0; k < 6; k++) {
+    ui_title_bar(42, 12, 396, 595, 158, TXT[51], FONT_BIG);
+    float bx = 64, by = 58;
+    gfx_draw(392, bx, by, WHITE, 0);
+    gfx_draw(plant_defs[reward].packet, bx + 7, by + 8, WHITE, 0);
+    for (int k = 0; k < 6; k++) {                 /* destellos alrededor del sobre */
         float a = frame * 0.05f + k * 1.047f, r = 30 + 4 * sinf(frame * 0.2f + k);
-        float x = 55 + cosf(a) * r, y = 58 + sinf(a) * r * 0.8f;
+        float x = bx + 31 + cosf(a) * r, y = by + 24 + sinf(a) * r * 0.8f;
         int f = (frame / 6 + k) % 5;
         gfx_draw_region(150, f * 9, 0, 9, 9, x - 4, y - 4, WHITE);
     }
-    if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 252, XS(XS_X_CONTINUE), 0xFF103060);
+    text_draw_centered(FONT_BIG, 300, by + 14, plant_name(reward), 0xFF103060);
+    float px = 40, py = 118, pw = 400, ph = 120;
+    gfx_rect(px - 3, py - 3, pw + 6, ph + 6, 0xFF14306A);
+    float k = ph / img_h(1476);                   /* el girasol entero a la izquierda y papel a la derecha */
+    gfx_draw_ex(1476, px, py, 0, 0, k, k, 0, WHITE, 0);
+    gfx_draw_region(1476, 280, 60, (int)(pw - img_w(1476) * k) + 1, (int)ph, px + img_w(1476) * k - 1, py, WHITE);
+    char d[256]; const char *src = plant_desc(reward); int n = 0;
+    while (src[n] && src[n] != '|' && n < (int)sizeof(d) - 1) {      /* solo la primera frase */
+        d[n] = src[n]; n++;
+        if ((src[n - 1] == '.' || src[n - 1] == '!') && src[n] == ' ') break;
+    }
+    d[n] = 0;
+    int nl = ui_text_wrap(FONT_SMALL, 0, 0, 180, 16, d, 0, 0);
+    ui_wrap_center = 1;
+    ui_text_wrap(FONT_SMALL, px + 312, py + ph / 2 - nl * 16 / 2.0f, 180, 16, d, 0xFF101010, 1);
+    ui_wrap_center = 0;
+    if (timer > 30 && (frame / 20) & 1) text_draw_centered(FONT_SMALL, SCREEN_W / 2, 248, XS(XS_X_CONTINUE), 0xFF103060);
 }
 
 /* minijuegos: el panel del Tencent (l15) con los iconos l49-l53, el marco l60 y el trofeo de superado (l62) */
