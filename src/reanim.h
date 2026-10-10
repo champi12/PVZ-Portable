@@ -70,5 +70,7 @@ void reanim_draw_flip(ReAnim *a, float x, float y, float scale, int flipx, u32 c
 int  reanim_track_info(ReAnim *a, int track, float *x, float *y, int *img);
 /* 1 = interpolar entre frames (como el PC); 0 = como el J2ME (por defecto) */
 extern int reanim_interp;
+/* dibuja la pista reanim_swap_track con otra imagen (misma posicion y giro); -1 = nada */
+extern int reanim_swap_track, reanim_swap_img;
 
 #endif

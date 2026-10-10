@@ -382,3 +382,10 @@ Medido en el J2ME con el registro de dibujo del port traducido (`PVZ_DRAWLOG`) y
 - Playero: sin chapoteo extra al caerle el brazo en el agua y sin sombra en la piscina (ningún nadador).
 - Pergaminos de la DS: trazo separado del papel y pintado sobre papel liso (1476/1477 almanaque más pequeños, 1480 planta nueva). Nombre de la planta nueva en su barra; los nombres largos se encogen para caber.
 - Paneles: los laterales girados se dibujan sin bilineal (GFX_NEAREST) para evitar líneas oscuras; niebla con borde suave sobre la valla.
+
+### Sesión 18 (errores10)
+- Ajo: mordisco con sonido, "puaj" y cambio de fila en diagonal hacia delante; la cara de asco se dibuja con la misma posición y giro que la cabeza (`reanim_swap_track`).
+- Guisantralla rearmada como la referencia del PC (cabezas juntas y más altas, tallo largo, hojas grandes).
+- Grano de café (PL_COFFEE): solo sobre una seta dormida; el grano (1482, tira de 22 frames de la hoja del PC con la hoja arriba) se queda y se deshace, y la seta despierta (instantáneas: explotan). Premio del 5-3 (la guisantralladora pasa al 5-5); sobres 1402/1442.
+- Cinta de los niveles x-10 y bolos: marco y banda del PC (1483/1484) que corre, 10 sobres como el PC.
+- 2-5 "Golpea al zombi": solo el mazo (1485); X da un mazazo en la casilla (normal 1, cono 2, cubo 3); los zombis salen de las tumbas más rápido y salen tumbas nuevas.

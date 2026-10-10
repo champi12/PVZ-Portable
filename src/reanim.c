@@ -131,6 +131,8 @@ void reanim_update(ReAnim *a, float dt)
     }
 }
 
+int reanim_swap_track = -1, reanim_swap_img = -1;
+
 int reanim_done(ReAnim *a) { return !a->loop && a->frame >= a->end; }
 
 void reanim_draw(ReAnim *a, float x, float y, float scale, u32 color) { reanim_draw_flip(a, x, y, scale, 0, color); }
@@ -157,7 +159,7 @@ void reanim_draw_flip(ReAnim *a, float x, float y, float scale, int flipx, u32 c
         float ma = cosf(kx) * sx * scale, mb = -sinf(kx) * sx * scale;
         float mc = sinf(ky) * sy * scale, md = cosf(ky) * sy * scale;
         if (flipx) { ma = -ma; mc = -mc; fx = -fx; }
-        gfx_draw_affine(A->img, x + fx * scale, y + fy * scale, ma, mb, mc, md, color);
+        gfx_draw_affine(tr == reanim_swap_track ? reanim_swap_img : A->img, x + fx * scale, y + fy * scale, ma, mb, mc, md, color);
     }
 }
 

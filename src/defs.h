@@ -16,6 +16,7 @@ enum {
     PL_GATLING, PL_WINTERMELON, PL_COBCANNON, PL_CATTAIL, PL_BLOVER, PL_PLANTERN, PL_GARLIC, PL_PUMPKIN,
     PL_GLOOM,             /* seta melancolica: piezas de la DS dibujadas por codigo */
     PL_SPLITPEA,          /* guisantralla: piezas del PC dibujadas por codigo */
+    PL_COFFEE,            /* grano de cafe: despierta a una seta dormida */
     PL_COUNT,
     PL_J2ME_COUNT = PL_GATLING,
     PL_BOWLNUT = 100,     /* nuez de bolos (nivel 1-5) */
@@ -86,9 +87,10 @@ static const PlantDef plant_defs[PL_COUNT] = {
  { "CALABAZA",        1367, 125, 3000, RE_TC_PUMPKIN,    4000, PK_PUMPKIN, 0,                       0,               0, 8,  -1,-1,   0 },
  { "SETA MELANCÓLICA",1368, 150, 5000, -1,                300, PK_GLOOM,   PF_MUSHROOM,             0,              -1,-1, -1,-1,  200 },
  { "GUISANTRALLA",    1400, 125,  750, -1,                300, PK_SPLIT,   0,                       0,              -1,-1, -1,-1,  150 },
+ { "GRANO DE CAFÉ",   1402,  75,  750, -1,                300, PK_PASSIVE, 0,                       0,              -1,-1, -1,-1,  0 },
 };
 /* sobre pequeno 38x28 de la barra (PvZBV 620+t; Tencent 1380+) */
-static inline int plant_smallpack(int t) { return t == PL_SPLITPEA ? 1440 : t >= PL_J2ME_COUNT ? 1380 + t - PL_J2ME_COUNT : 620 + t; }
+static inline int plant_smallpack(int t) { return t == PL_SPLITPEA ? 1440 : t == PL_COFFEE ? 1442 : t >= PL_J2ME_COUNT ? 1380 + t - PL_J2ME_COUNT : 620 + t; }
 
 /* textos del almanaque (indices en TXT_ES; las plantas del Tencent usan plant_name()/plant_desc() de ui.c) */
 static const unsigned char plant_txt_name[PL_J2ME_COUNT] __attribute__((unused)) = {
@@ -204,13 +206,13 @@ static const signed char level_reward[50] = {
     PL_SUNSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, PL_HYPNOSHROOM, -1, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_DOOMSHROOM, -1, PL_LILYPAD,
     PL_SQUASH, PL_THREEPEATER, PL_TANGLEKELP, PL_JALAPENO, -1, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT, -1, PL_SEASHROOM,
     PL_PLANTERN, PL_CACTUS, PL_BLOVER, PL_SPLITPEA, -1, PL_STARFRUIT, PL_PUMPKIN, PL_CATTAIL, PL_GLOOM, PL_CABBAGEPULT,
-    PL_FLOWERPOT, PL_KERNELPULT, PL_GATLING, PL_GARLIC, -1, PL_COBCANNON, -1, PL_MELONPULT, PL_WINTERMELON, -1 };
+    PL_FLOWERPOT, PL_KERNELPULT, PL_COFFEE, PL_GARLIC, PL_GATLING, PL_COBCANNON, -1, PL_MELONPULT, PL_WINTERMELON, -1 };
 /* orden del PC (almanaque y "elige tus plantas") */
 static const signed char pc_order[PL_COUNT] __attribute__((unused)) = {
     PL_PEASHOOTER, PL_SUNFLOWER, PL_CHERRYBOMB, PL_WALLNUT, PL_POTATOMINE, PL_SNOWPEA, PL_CHOMPER, PL_REPEATER,
     PL_PUFFSHROOM, PL_SUNSHROOM, PL_FUMESHROOM, PL_GRAVEBUSTER, PL_HYPNOSHROOM, PL_SCAREDYSHROOM, PL_ICESHROOM, PL_DOOMSHROOM,
     PL_LILYPAD, PL_SQUASH, PL_THREEPEATER, PL_TANGLEKELP, PL_JALAPENO, PL_SPIKEWEED, PL_TORCHWOOD, PL_TALLNUT,
     PL_SEASHROOM, PL_PLANTERN, PL_CACTUS, PL_BLOVER, PL_SPLITPEA, PL_STARFRUIT, PL_PUMPKIN, PL_CABBAGEPULT, PL_FLOWERPOT,
-    PL_KERNELPULT, PL_GARLIC, PL_MELONPULT, PL_GATLING, PL_GLOOM, PL_CATTAIL, PL_WINTERMELON, PL_COBCANNON };
+    PL_KERNELPULT, PL_COFFEE, PL_GARLIC, PL_MELONPULT, PL_GATLING, PL_GLOOM, PL_CATTAIL, PL_WINTERMELON, PL_COBCANNON };
 
 #endif

@@ -204,7 +204,7 @@ if len(sys.argv) > 8:
         from splitpea_parts import assemble as sp_assemble
         hd, bd, _ = sp_assemble(Image.open(sp))
         fill(1478)
-        put(1478, hd.resize((50, 22), Image.LANCZOS)); put(1479, bd.resize((30, 16), Image.LANCZOS))
+        put(1478, hd.resize((45, 20), Image.LANCZOS)); put(1479, bd.resize((30, 23), Image.LANCZOS))
     if os.path.exists(dp):
         fill(1480); put(1480, sheet(400, 120, inks[0], 1.3, 2, 120 - 116))
     zp = os.path.join(ref, 'zombi_partes.png')
@@ -214,6 +214,40 @@ if len(sys.argv) > 8:
         k = 19 / cut(zim, (1, 9, 54, 57)).width   # al tamano de la cabeza del J2ME (78: 19 px)
         y = cut(zim, (303, 9, 356, 85))
         fill(1481); put(1481, y.resize((round(y.width * k), round(y.height * k)), Image.LANCZOS))
+    cp = os.path.join(ref, 'cafe_partes.png')
+    if os.path.exists(cp):                     # 1482: grano de cafe en tira de 22 frames de 16x49 (10 quieto + 12 deshaciendose)
+        cim = Image.open(cp).convert('RGBA')
+        def nowhite(b):
+            c = cim.crop(b); px = c.load(); W, H = c.size
+            st = [(x, y) for x in range(W) for y in (0, H - 1)] + [(x, y) for y in range(H) for x in (0, W - 1)]; seen = set()
+            while st:
+                q = st.pop()
+                if q in seen or not (0 <= q[0] < W and 0 <= q[1] < H) or min(px[q][:3]) < 225: continue
+                seen.add(q); px[q] = (0, 0, 0, 0); x, y = q; st += [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+            return c
+        heads = [nowhite((1 + 58 * k, 9, 58 + 58 * k, 165)) for k in range(12)]
+        leaf = nowhite((1, 174, 33, 201)); leaf = leaf.crop(leaf.getbbox())
+        frames = []
+        bb = heads[0].getbbox(); a0 = heads[0].split()[3].load()
+        xs = [x for x in range(bb[0], bb[2]) if a0[x, bb[1] + 2] > 60]; tx = (xs[0] + xs[-1]) // 2      # punta de arriba del grano
+        lf = leaf.transpose(Image.FLIP_LEFT_RIGHT).rotate(12, expand=True, resample=Image.BICUBIC)   # base abajo a la derecha, punta arriba a la izquierda
+        lf = lf.resize((round(lf.width * 0.9), round(lf.height * 0.9)), Image.LANCZOS)
+        for k in range(12):
+            f = Image.new('RGBA', (57, 156 + 18)); f.alpha_composite(heads[k], (0, 18))
+            if k < 3:                          # la hoja arriba a la izquierda mientras el grano esta entero (como el PC)
+                l2 = lf if k == 0 else lf.point(lambda v: v)
+                f.alpha_composite(l2, (max(0, tx + 6 - l2.width), max(0, bb[1] + 18 + 7 - l2.height)))
+            frames.append(f.resize((16, 49), Image.LANCZOS))
+        seq = [frames[0]] * 10 + frames[1:] + [frames[11]]
+        strip = Image.new('RGBA', (16 * len(seq), 49))
+        for k, f in enumerate(seq): strip.alpha_composite(f, (16 * k, 0))
+        fill(1482); put(1482, strip)
+    bp = os.path.join(ref, 'cinta_marco.png')
+    if os.path.exists(bp):                     # 1483/1484: cinta transportadora del PC (marco y banda) a la altura de la pantalla
+        fr = Image.open(bp).convert('RGBA'); bt = Image.open(os.path.join(ref, 'cinta.png')).convert('RGBA')
+        fill(1483); put(1483, fr.resize((50, 272), Image.LANCZOS)); put(1484, bt.resize((44, 88), Image.LANCZOS))
+    mp = os.path.join(ref, 'mazo.png')
+    if os.path.exists(mp): fill(1485); put(1485, Image.open(mp).convert('RGBA'))   # 1485: mazo de golpea al zombi
 # 1390: nube de niebla generada (mancha suave con ruido, transparente en los bordes; no hay ninguna limpia en los jar)
 import random
 from PIL import ImageFilter
