@@ -9,7 +9,9 @@ su numero, el indice de cada pista y el rango de frames de las pistas de control
 uso: add_pc.py gfx.pak anim.pak carpeta_pc salida_gfx.pak salida_anim.pak pc_anims.h Nombre1 [Nombre2 ...]
      carpeta_pc = datos del PvZ de PC con reanim/*.reanim y sus imagenes (p. ej. el main.pak de la GOTY
      extraido); Nombre = archivo sin extension (SplitPea, PeaShooterSingle, Zombie...); +Imagen = una imagen
-     suelta de reanim/ (p. ej. +Zombie_balloon_outerarm_upper2, el brazo roto) -> #define PC_IMG_<IMAGEN>"""
+     suelta de reanim/ (p. ej. +Zombie_balloon_outerarm_upper2, el brazo roto) -> #define PC_IMG_<IMAGEN>;
+     @ruta.png = una imagen tal cual, sin escalar ni retocar (los fotogramas de la DS de tools/cut_ds_peashooter.py)
+     -> #define PC_IMG_<NOMBRE>"""
 import sys, os, re, struct, math, json, tempfile
 from PIL import Image, ImageEnhance
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -169,6 +171,10 @@ def main():
     sizes = {}
     hdr = ['/* generado por tools/add_pc.py: animaciones del PvZ de PC (indices de pista y rangos de frames) */',
            '#ifndef PC_ANIMS_H', '#define PC_ANIMS_H', '#define RE_PC_FIRST %d' % len(anims)]
+    for nm in [n for n in names if n.startswith('@')]:
+        stem = os.path.splitext(os.path.basename(nm[1:]))[0]
+        hdr.append('#define PC_IMG_%s %d' % (re.sub(r'[^A-Z0-9]', '_', stem.upper()), len(imgs)))
+        imgs.append(pack_image(Image.open(nm[1:]).convert('RGBA')))
     for nm in [n for n in names if n.startswith('+')]:
         p = find_image(pcdir, nm[1:])
         if not p:
@@ -177,7 +183,7 @@ def main():
         sm = j2me_style(src.resize((max(1, round(src.width * SC)), max(1, round(src.height * SC))), Image.LANCZOS))
         hdr.append('#define PC_IMG_%s %d' % (re.sub(r'[^A-Z0-9]', '_', nm[1:].upper()), len(imgs)))
         imgs.append(pack_image(sm))
-    for nm in [n for n in names if not n.startswith('+')]:
+    for nm in [n for n in names if n[0] not in '+@']:
         path = os.path.join(pcdir, 'reanim', nm + '.reanim')
         fps, tracks = parse_reanim(path)
         nf = max(len(fr) for _, fr in tracks)

@@ -27,6 +27,10 @@ Los datos van en `data/` (`gfx.pak`, `anim.pak`, `sfx.pak`, `music/`). Las anima
 Al convertirlas se les da el estilo del J2ME: cabezas más grandes, plantas algo mayores, contorno oscuro, colores
 planos y bordes duros; en el juego van a saltos (6 fps, sin interpolar) como las del móvil (`reanim_pc_smooth`).
 
+El lanzaguisantes usa los sprites de la DS (reposo, disparo, guisante y salpicadura): se recortan de la hoja de
+sprites con `tools/cut_ds_peashooter.py hoja.png data/ds` y se añaden al final de la orden de arriba con
+`$(ls data/ds/*.png | sed 's/^/@/')`.
+
 (siempre desde los `.pak` originales del J2ME y con todos los nombres a la vez: escribe también `src/pc_anims.h`,
 que hay que volver a compilar).
 

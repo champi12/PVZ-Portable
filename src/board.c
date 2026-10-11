@@ -57,6 +57,8 @@
 #define IMG_GRAVE3 338
 #define IMG_CRATER 155
 #define IMG_FLAMES 477
+#define DS_K 1.12f           /* lanzaguisantes de la DS: a la altura del del J2ME */
+#define DS_PEA_AX 14.5f      /* punto de apoyo de sus celdas (abajo, a 14.5 px del borde izquierdo) */
 #define IMG_PEA 73           /* guisante del J2ME (la 544 es la col que sostiene la coltapulta) */
 #define IMG_SEASPORE 444     /* espora de la seta marina */
 #define IMG_SNOWPEA 587
@@ -91,7 +93,7 @@ enum {
     PS_FIRE, PS_DOOMCLOUD, PS_FUMECLOUD, PS_ICE, PS_RED, PS_SPLASH, PS_ICECRYSTAL, PS_POWIE, PS_SPUDOW, PS_DOOM, PS_DOOMSTEM, PS_COFFEE, PS_COUNT
 };
 static const short psheet[PS_COUNT][2] = {
-    {352,12}, {279,12}, {287,12}, {372,6}, {394,6}, {221,6}, {218,9}, {66,4}, {70,6}, {74,6},
+    {PC_IMG_DS_PEASPLAT,16}, {279,12}, {287,12}, {372,6}, {394,6}, {221,6}, {218,9}, {66,4}, {70,6}, {74,6},
     {234,6}, {138,38}, {150,9}, {396,8}, {197,12}, {89,12}, {85,11}, {142,11}, {15,14}, {535,30}, {165,24},
     {477,44}, {5,30}, {232,40}, {10,30}, {325,44}, {52,61}, {395,34}, {83,54}, {104,53}, {590,60}, {917,43}, {1482,16} };   /* 1482: grano de cafe (se queda y se deshace) */   /* 917: columna del hongo nuclear (Tencent 217) */
 
@@ -1289,7 +1291,9 @@ static void update_plant(Plant *p, int r, int c)
                 float ox, oy, hx = 0, hy = 0; int img = -1;
                 plant_origin(p, r, c, &ox, &oy);
                 float mx = px + 8, my = cell_y(r) + G.rh * 0.42f;
-                if (p->type == PL_PEASHOOTER || p->type == PL_SNOWPEA || p->type == PL_REPEATER) {
+                if (p->type == PL_PEASHOOTER) {      /* lanzaguisantes de la DS: boca del fotograma 3 del disparo */
+                    mx = px + (27 - DS_PEA_AX) * DS_K - 4; my = cy_c(r, c) + G.rh - 3 + pot_lift_y(r, c) - (36 - 13) * DS_K;
+                } else if (p->type == PL_SNOWPEA || p->type == PL_REPEATER) {
                     int head = p->type == PL_SNOWPEA ? 5 : p->type == PL_REPEATER ? 6 : 4;
                     if (reanim_track_info(&p->anim, head, &hx, &hy, &img) && img >= 0) {
                         mx = ox + hx + img_w(img) * 1.12f - 8; my = oy + hy + img_h(img) * 1.12f * 0.40f;   /* dentro de la boca (cabeza a escala 1.12) */
@@ -2555,7 +2559,11 @@ int board_update(void)
         Zombie *a = spawn_zombie(ZT_NORMAL, 4, cell_x(5)), *b = spawn_zombie(ZT_BALLOON, 4, cell_x(6) + 5);
         Zombie *c = spawn_zombie(ZT_NORMAL, 5, cell_x(5)), *e = spawn_zombie(ZT_BALLOON, 5, cell_x(6) + 5);
         if (b) z_pop(b);
-        if (a) a->speed = 0.01f; if (b) b->speed = 0.01f; if (c) c->speed = 0.01f; if (e) e->speed = 0.01f;
+        spawn_zombie(ZT_NORMAL, 0, cell_x(7));
+        if (a) a->speed = 0.01f;
+        if (b) b->speed = 0.01f;
+        if (c) c->speed = 0.01f;
+        if (e) e->speed = 0.01f;
         sfx_stop_all();
     }
     if (state == ST_PLAY) { wave_timer = 9999; for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].speed > 0.02f && Z[i].state == ZS_WALK) Z[i].speed = 0.01f; }
@@ -2744,6 +2752,21 @@ static void gloom_anim(Plant *p, int shooting)
         p->anim.frame += (rand() % 100) / 100.0f * (p->anim.end - p->anim.start);
     }
     p->anim.interp = 1;
+}
+
+/* lanzaguisantes de la DS (tools/cut_ds_peashooter.py): reposo de 8 fotogramas y disparo de 4 (la animacion de
+ * disparo del J2ME marca el tiempo) */
+static void draw_ds_peashooter(Plant *p, float cx, float base, u32 col)
+{
+    const PlantDef *d = pdef(PL_PEASHOOTER);
+    int img, h = 32; float ax = DS_PEA_AX;
+    if (p->anim.def && !p->anim.loop && p->anim.start == d->act_s) {
+        int f = (int)((p->anim.frame - p->anim.start) * 4 / (p->anim.end - p->anim.start + 1));
+        f = f < 0 ? 0 : f > 3 ? 3 : f;
+        img = PC_IMG_DS_PEA_SHOOT0 + f;
+        h = 36; ax = DS_PEA_AX - 0.5f;
+    } else img = PC_IMG_DS_PEA_IDLE0 + ((frame + (int)(cx * 7)) / 6) % 8;
+    gfx_draw_ex(img, sxw(cx), syw(base), ax, h, DS_K * G.ws, DS_K * G.ws, 0, col, 0);
 }
 
 static void draw_gloom(Plant *p, float cx, float base, u32 col)
@@ -2984,7 +3007,7 @@ static void proj_img(Proj *q, int *img, float *sc)
 {
     *sc = 1;
     switch (q->kind) {
-    case PJ_PEA: *img = IMG_PEA; break;  case PJ_SNOW: *img = IMG_SNOWPEA; break; case PJ_SEA: *img = IMG_SEASPORE; *sc = 0.8f; break;
+    case PJ_PEA: *img = PC_IMG_DS_PEA; *sc = DS_K; break;  case PJ_SNOW: *img = IMG_SNOWPEA; break; case PJ_SEA: *img = IMG_SEASPORE; *sc = 0.8f; break;
     case PJ_BOSSFIRE: *img = IMG_FIREBALL; *sc = 0.6f; break; case PJ_BOSSICE: *img = IMG_ICEBALL; *sc = 0.9f; break;
     case PJ_FIRE: *img = IMG_FIREPEA; break; case PJ_PUFF: *img = IMG_PUFF; break;
     case PJ_SPIKE: *img = IMG_SPIKE; break; case PJ_STAR: *img = IMG_STAR; break;
@@ -3059,6 +3082,12 @@ void board_draw(void)
                     Plant *m = &P[r][c - 1][1];
                     float myo = P[r][c][0].alive ? pot_lift(r, c) : 0;
                     draw_anim_at(&m->anim, cell_x(c), base + myo, WHITE, 0);
+                    continue;
+                }
+                if (p->type == PL_PEASHOOTER) {
+                    if (lane[r] != LN_WATER && !P[r][c][0].alive)
+                        gfx_draw_ex(IMG_SHADOW, sxw(cell_x(c) + G.cw / 2), syw(base), 28, 11, 0.45f * G.ws, 0.45f * G.ws, 0, 0x50FFFFFF, 0);
+                    draw_ds_peashooter(p, cell_x(c) + G.cw / 2, base + (P[r][c][0].alive ? pot_lift(r, c) : 0), WHITE);
                     continue;
                 }
                 if (p->type == PL_SPLITPEA) {
@@ -3145,6 +3174,11 @@ void board_draw(void)
             static ReAnim ghost;
             int t = seed_type(held); const PlantDef *d = pdef(t);
             if (t == PL_COFFEE) goto ghost_done;
+            if (t == PL_PEASHOOTER) {
+                static Plant gp0;
+                draw_ds_peashooter(&gp0, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF);
+                goto ghost_done;
+            }
             if (t == PL_SPLITPEA) {
                 static Plant sp; sp.type = PL_SPLITPEA;
                 draw_splitpea(&sp, cell_x(cur_c) + G.cw / 2, cy_c(cur_r, cur_c) + G.rh - 3 + (P[cur_r][cur_c][0].alive ? pot_lift(cur_r, cur_c) : 0), 0xC0FFFFFF);
