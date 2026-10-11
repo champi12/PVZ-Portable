@@ -1707,7 +1707,7 @@ bool PspTexGetRaw(GLuint id, int* ow, int* oh, int* w, int* h, int* psm, const v
 void* PspTexAlloc(int bytes);
 void PspTexSetRaw(GLuint id, int ow, int oh, int w, int h, int psm, void* data, int bytes);
 
-static constexpr uint32_t PSP_TEX_CACHE_MAGIC = 0x31585450;  // "PTX1"
+static constexpr uint32_t PSP_TEX_CACHE_MAGIC = 0x32585450;  // "PTX2": filas de al menos 8 pixeles
 
 static std::string PspTexCachePath(const std::string& theKey)
 {

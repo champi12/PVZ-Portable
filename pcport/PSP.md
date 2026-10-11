@@ -26,7 +26,8 @@ Copia `EBOOT.PBP` a `ms0:/PSP/GAME/PVZPC/` y, en la misma carpeta, los datos de 
   coma flotante simple (`-fsingle-precision-constant`), estado de la GU sin repetir (textura y mezcla), la mitad
   de partículas, como mucho 4 actualizaciones entre dibujos (si la PSP no llega el juego se ralentiza en vez de
   caer a pocos fps) y el hilo de carga con menos prioridad. Contador de fps y actualizaciones en pantalla.
-- Registro de rendimiento: L + R + START escribe cada segundo en `rendimiento.txt` (carpeta de datos) los fps,
+- Registro de rendimiento (encendido; L + R + START lo apaga): cada segundo escribe en `rendimiento.txt` (junto a
+  `SDL_Log.txt`) los fps,
   las actualizaciones, el peor fotograma, la memoria y la pantalla actual.
 - Guardado: en `savedata/` junto al EBOOT (o `ms0:/PSP/SAVEDATA/PVZPC/` si no se puede escribir ahí); el usuario actual y el progreso se guardan en cuanto cambian, porque
   con HOME el juego no llega a cerrarse ordenadamente.

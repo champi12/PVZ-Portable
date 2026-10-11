@@ -72,6 +72,22 @@ static uint64_t gTBegin, gTLastSwap, gAccDraw, gAccSync, gAccWait, gAccTotal;
 static const void *gLastTexData = nullptr;
 static int gLastPsm = -1, gLastFilter = -1, gLastWrap = -1, gLastTexOn = -1, gLastBlend = -1;
 static void ForgetGuState() { gLastTexData = nullptr; gLastPsm = gLastFilter = gLastWrap = gLastTexOn = gLastBlend = -1; }
+/* proyeccion ortografica: coordenadas en pixeles de la pantalla (0,0 arriba a la izquierda), z = 0 */
+static void SetupMatrices()
+{
+	static ScePspFMatrix4 proj = {
+		{ 2.0f / 480, 0, 0, 0 }, { 0, -2.0f / 272, 0, 0 }, { 0, 0, -1, 0 }, { -1, 1, 0, 1 } };
+	static ScePspFMatrix4 ident = { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 } };
+	sceGuSetMatrix(GU_PROJECTION, &proj);
+	sceGuSetMatrix(GU_VIEW, &ident);
+	sceGuSetMatrix(GU_MODEL, &ident);
+	sceGuSetMatrix(GU_TEXTURE, &ident);
+	sceGuTexMapMode(GU_TEXTURE_COORDS, 0, 0);
+	sceGuTexScale(1.0f, 1.0f);
+	sceGuTexOffset(0.0f, 0.0f);
+	sceGuDepthRange(65535, 0);
+	sceGuEnable(GU_CLIP_PLANES);
+}
 static unsigned int gSwapV = 0;   /* refresco en el que se pidio el ultimo cambio de buffer */
 static void FrameBegin()
 {
@@ -83,6 +99,7 @@ static void FrameBegin()
 #endif
 	sceGuStart(GU_DIRECT, gList);
 	ForgetGuState();
+	SetupMatrices();
 	gFrameOpen = true;
 }
 
@@ -148,18 +165,30 @@ static void DrawCursor()
 	sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 6, 0, v);
 }
 
-/* registro de rendimiento para probar en la consola (L + R + START lo enciende y apaga): cada segundo escribe
- * en rendimiento.txt (carpeta de datos) los fps, las actualizaciones, el peor fotograma, la memoria y la pantalla */
+/* registro de rendimiento para probar en la consola (encendido; L + R + START lo apaga y enciende): cada segundo
+ * escribe en rendimiento.txt (junto a SDL_Log.txt) los fps, las actualizaciones, el peor fotograma, la memoria y
+ * la pantalla */
 namespace Sexy { std::string GetAppDataFolder(); }
-static bool gPspLogOn = false;
+static bool gPspLogOn = true;   /* encendido desde el arranque; L + R + START lo apaga */
 static const char *gPspScreen = "";
 static float gWorstFrameMs = 0;
 static void PspLogLine(const char *fmt, ...)
 {
 	if (!gPspLogOn) return;
-	std::string path = Sexy::GetAppDataFolder() + "rendimiento.txt";
-	FILE *f = fopen(path.c_str(), "a");
+	/* junto a SDL_Log.txt (la carpeta del juego); si ahi no se puede, en la carpeta de las partidas */
+	static int sWhere = 0;   /* 0 = sin probar, 1 = carpeta del juego, 2 = carpeta de las partidas */
+	FILE *f = nullptr;
+	if (sWhere != 2) { f = fopen("rendimiento.txt", "a"); if (f) sWhere = 1; }
+	if (!f) { std::string path = Sexy::GetAppDataFolder() + "rendimiento.txt"; f = fopen(path.c_str(), "a"); if (f) sWhere = 2; }
 	if (!f) return;
+	static bool sHeader = false;
+	if (!sHeader) {
+		sHeader = true;
+		struct mallinfo mi = mallinfo();
+		fprintf(f, "=== arranque (memoria usada %d KB, libre del sistema %d KB) ===\n"
+			"segundo, FPS, L = actualizaciones del juego por segundo (lo normal 100), peor = fotograma mas lento en ms, memoria, pantalla\n",
+			mi.uordblks / 1024, (int)(sceKernelTotalFreeMemSize() / 1024));
+	}
 	va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
 	fputc('\n', f);
 	fclose(f);
@@ -323,6 +352,7 @@ static void psp_glTexParameteri(GLenum, GLenum pname, GLint v)
 	if (pname == GL_TEXTURE_WRAP_S) t.wrap = v == GL_REPEAT ? GU_REPEAT : GU_CLAMP;
 	if (pname == GL_TEXTURE_MIN_FILTER || pname == GL_TEXTURE_MAG_FILTER) t.filter = v == GL_LINEAR ? GU_LINEAR : GU_NEAREST;
 }
+static int TexStride(int w) { return (w + 7) & ~7; }
 /* Las texturas se guardan a mitad de resolucion (las UV de GL van de 0 a 1, asi que el juego no lo nota) y en
  * 16 bits: 5650 si es opaca, 5551 si su alfa es todo o nada y 4444 si no. Un octavo de memoria que en RGBA. */
 static void Upload(const void *pixels, int w, int h, GLenum format, GLenum type)
@@ -359,14 +389,18 @@ static void Upload(const void *pixels, int w, int h, GLenum format, GLenum type)
 	int opaque = 1, binary = 1;
 	for (int i = 0; i < dw * dh; i++) { unsigned a = src[i] >> 24; if (a != 255) opaque = 0; if (a != 0 && a != 255) binary = 0; }
 	int psm = opaque ? GU_PSM_5650 : binary ? GU_PSM_5551 : GU_PSM_4444;
-	int bytes = dw * dh * 2;
+	/* la GU real exige filas de al menos 8 pixeles (16 bytes): las texturas mas estrechas se rellenan */
+	int stride = TexStride(dw);
+	int bytes = stride * dh * 2;
 	uint16_t *d = (uint16_t *)memalign(16, bytes);
 	if (!d) return;
-	for (int i = 0; i < dw * dh; i++) {
-		uint32_t p = src[i]; unsigned r = p & 255, g = (p >> 8) & 255, b = (p >> 16) & 255, a = p >> 24;
-		if (psm == GU_PSM_5650) d[i] = (r >> 3) | ((g >> 2) << 5) | ((b >> 3) << 11);
-		else if (psm == GU_PSM_5551) d[i] = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) | ((a >> 7) << 15);
-		else d[i] = (r >> 4) | ((g >> 4) << 4) | ((b >> 4) << 8) | ((a >> 4) << 12);
+	memset(d, 0, bytes);
+	for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {
+		uint32_t p = src[y * dw + x]; unsigned r = p & 255, g = (p >> 8) & 255, b = (p >> 16) & 255, a = p >> 24;
+		uint16_t &o = d[y * stride + x];
+		if (psm == GU_PSM_5650) o = (r >> 3) | ((g >> 2) << 5) | ((b >> 3) << 11);
+		else if (psm == GU_PSM_5551) o = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) | ((a >> 7) << 15);
+		else o = (r >> 4) | ((g >> 4) << 4) | ((b >> 4) << 8) | ((a >> 4) << 12);
 	}
 	sceKernelDcacheWritebackRange(d, bytes);
 	/* se publica de una vez para que el hilo de dibujo nunca vea una textura a medias */
@@ -444,7 +478,7 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 	if (n <= 0) return;
 	gDraws++;
 	if (sceGuCheckList() > (int)sizeof(gList) - 256 * 1024 - n * (int)sizeof(GuV)) {   /* lista casi llena: se envia y se sigue */
-		sceGuFinish(); sceGuSync(0, 0); sceGuStart(GU_DIRECT, gList); ForgetGuState();
+		sceGuFinish(); sceGuSync(0, 0); sceGuStart(GU_DIRECT, gList); ForgetGuState(); SetupMatrices();
 	}
 	GuV *out = (GuV *)sceGuGetMemory(n * sizeof(GuV));
 	Tex *t = gUniform[3] && gBoundTex > 0 && gBoundTex < MAX_TEX && gTex[gBoundTex].data ? &gTex[gBoundTex] : nullptr;
@@ -457,15 +491,15 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 		out[i].y = ((1 - ny) * 0.5f * gVp[3] + gVp[1]) * sy - gCamY;
 		out[i].z = 0;
 		out[i].color = v[i].color;
-		out[i].u = t ? v[i].tu * t->w : 0;
-		out[i].v = t ? v[i].tv * t->h : 0;
+		out[i].u = t ? v[i].tu : 0;   /* modo 3D: coordenadas de textura normalizadas (0..1) */
+		out[i].v = t ? v[i].tv : 0;
 	}
 	/* solo se manda a la GU lo que cambia: muchas piezas seguidas usan la misma textura y mezcla */
 	if (t) {
 		if (gLastTexOn != 1) { sceGuEnable(GU_TEXTURE_2D); gLastTexOn = 1; }
 		if (gLastTexData != t->data || gLastPsm != t->psm) {
 			sceGuTexMode(t->psm, 0, 0, 0);
-			sceGuTexImage(0, t->w, t->h, t->w, t->data);
+			sceGuTexImage(0, t->w, t->h, TexStride(t->w), t->data);
 			sceGuTexFlush();
 			gLastTexData = t->data; gLastPsm = t->psm;
 		}
@@ -474,7 +508,9 @@ static void DrawRun(int prim, const GLV *v, int n, bool additive)
 	} else if (gLastTexOn != 0) { sceGuDisable(GU_TEXTURE_2D); gLastTexOn = 0; }
 	int blend = (additive || gBlendD == GL_ONE) ? 1 : 0;
 	if (gLastBlend != blend) { SetBlend(additive); gLastBlend = blend; }
-	sceGuDrawArray(prim, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, n, 0, out);
+	/* modo 3D con proyeccion ortografica en pixeles: la GU recorta lo que sale de la pantalla (en modo 2D las
+	 * coordenadas negativas no valen en la PSP real: dan la vuelta y salen triangulos enormes) */
+	sceGuDrawArray(prim, GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_3D, n, 0, out);
 }
 static void psp_glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
@@ -521,7 +557,7 @@ static void psp_glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum, GLe
 	const uint16_t *s = (const uint16_t *)t.data; uint32_t *o = (uint32_t *)out;
 	for (int r = 0; r < h; r++) for (int c = 0; c < w; c++) {
 		int sx = (x + c) * t.w / t.ow, sy = (y + r) * t.h / t.oh;
-		uint16_t p = s[sy * t.w + sx]; uint32_t R, G, B, A;
+		uint16_t p = s[sy * TexStride(t.w) + sx]; uint32_t R, G, B, A;
 		if (t.psm == GU_PSM_5650) { R = (p & 31) * 255 / 31; G = ((p >> 5) & 63) * 255 / 63; B = (p >> 11) * 255 / 31; A = 255; }
 		else if (t.psm == GU_PSM_5551) { R = (p & 31) * 255 / 31; G = ((p >> 5) & 31) * 255 / 31; B = ((p >> 10) & 31) * 255 / 31; A = (p >> 15) ? 255 : 0; }
 		else { R = (p & 15) * 17; G = ((p >> 4) & 15) * 17; B = ((p >> 8) & 15) * 17; A = (p >> 12) * 17; }
