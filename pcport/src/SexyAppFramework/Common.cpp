@@ -22,6 +22,9 @@
  * along with PvZ-Portable. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#ifdef __PSP__
+#include <pspiofilemgr.h>
+#endif
 #include "Common.h"
 #include "misc/MTRand.h"
 #include <algorithm>
@@ -351,8 +354,21 @@ bool Sexy::FileExists(std::string_view theFileName)
 
 void Sexy::MkDir(std::string_view theDir)
 {
+#ifdef __PSP__
+	// PSP: std::filesystem no entiende bien rutas como "ms0:/PSP/..."; se crea cada carpeta con sceIoMkdir
+	std::string aDir(theDir);
+	for (size_t i = aDir.find('/', aDir.find(':') == std::string::npos ? 1 : aDir.find(':') + 2); ; i = aDir.find('/', i + 1))
+	{
+		std::string aPart = aDir.substr(0, i);
+		if (!aPart.empty() && aPart.back() != ':')
+			sceIoMkdir(aPart.c_str(), 0777);
+		if (i == std::string::npos)
+			break;
+	}
+#else
 	std::error_code ec;
 	std::filesystem::create_directories(PathFromU8(theDir), ec);
+#endif
 }
 
 std::string Sexy::GetFileName(std::string_view thePath, bool noExtension)

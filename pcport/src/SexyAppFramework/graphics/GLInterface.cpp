@@ -1723,8 +1723,7 @@ bool GLInterface::PspSaveTextureCache(MemoryImage* theImage, const std::string& 
 	if (aData == nullptr || aData->mPixelFormat == PixelFormat_Unknown || aData->mTextures.empty())
 		return false;
 	std::string aPath = PspTexCachePath(theKey);
-	std::error_code ec;
-	std::filesystem::create_directories(std::filesystem::path(aPath).parent_path(), ec);
+	MkDir(aPath.substr(0, aPath.rfind('/')));
 	FILE* f = fopen(aPath.c_str(), "wb");
 	if (!f)
 		return false;

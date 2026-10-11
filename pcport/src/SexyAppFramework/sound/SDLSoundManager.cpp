@@ -354,8 +354,7 @@ bool SDLSoundManager::DecodeSound(intptr_t theSfxID, const std::string& theFilen
 #ifdef __PSP__
 	if (Mix_Chunk* aChunk = mSourceSounds[theSfxID])
 	{
-		std::error_code ec;
-		std::filesystem::create_directories(std::filesystem::path(aCachePath).parent_path(), ec);
+		MkDir(aCachePath.substr(0, aCachePath.rfind('/')));
 		if (FILE* f = fopen(aCachePath.c_str(), "wb"))
 		{
 			bool ok = fwrite(aChunk->abuf, 1, aChunk->alen, f) == aChunk->alen;

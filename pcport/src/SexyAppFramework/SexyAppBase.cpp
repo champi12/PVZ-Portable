@@ -1389,6 +1389,9 @@ bool SexyAppBase::WriteBytesToFile(const std::string& theFileName, const void *t
 
 	MkDir(GetFileDir(theFileName));
 	std::ofstream aFile(PathFromU8(theFileName), std::ios::out | std::ios::binary | std::ios::trunc);
+#ifdef __PSP__
+	Sexy::LogInfoLn("Guardando '{}': {}", theFileName, aFile ? "bien" : "NO SE PUDO ABRIR");
+#endif
 	if (!aFile)
 	{
 		if ((mRecordingDemoBuffer) && IsOnPrimaryThread())
@@ -3443,8 +3446,7 @@ void SexyAppBase::Init()
 		// si esa carpeta no se puede escribir (p. ej. un EBOOT abierto desde fuera de la Memory Stick en un
 		// emulador, que la monta como disco de solo lectura), se usa ms0:/PSP/SAVEDATA/PVZPC/
 		auto aWritable = [](const std::string& theDir) {
-			std::error_code ec;
-			std::filesystem::create_directories(theDir, ec);
+			MkDir(theDir);
 			std::string aTest = theDir + "escritura.tmp";
 			FILE* f = fopen(aTest.c_str(), "wb");
 			if (!f)
@@ -3458,9 +3460,9 @@ void SexyAppBase::Init()
 		std::string aDir = getcwd(aCwd, sizeof(aCwd)) ? std::string(aCwd) + "/savedata/" : std::string();
 		if (aDir.empty() || aDir.compare(0, 3, "umd") == 0 || !aWritable(aDir))
 			aDir = "ms0:/PSP/SAVEDATA/PVZPC/";
-		aWritable(aDir);
+		bool aOk = aWritable(aDir);
 		SetAppDataFolder(aDir);
-		Sexy::LogInfoLn("Datos guardados en '{}'", aDir);
+		Sexy::LogInfoLn("Datos guardados en '{}' ({})", aDir, aOk ? "se puede escribir" : "NO SE PUEDE ESCRIBIR");
 	}
 #elif !defined(__SWITCH__)
 	{
