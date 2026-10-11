@@ -1,0 +1,59 @@
+# PSP build:  make -f Makefile.psp JAR=/path/to/Plants_vs._Zombies_4.6.0_LockedRes_320x480_Touch_En.jar
+# Needs the pspdev toolchain (https://github.com/pspdev/pspdev) with psp-config in PATH.
+# Output: build/psp/EBOOT.PBP  ->  copy to ms0:/PSP/GAME/PVZ/EBOOT.PBP
+
+JAR ?= game.jar
+GEN := build/gen
+BUILD := build/psp
+
+ifeq ($(MAKECMDGOALS),clean)
+else
+ifeq ($(wildcard $(GEN)/sources.mk),)
+$(shell $(MAKE) -f Makefile gen JAR=$(JAR) >&2)
+endif
+endif
+ifneq ($(shell $(MAKE) -q -f Makefile gen JAR=$(JAR) >/dev/null 2>&1; echo $$?),0)
+$(shell $(MAKE) -f Makefile gen JAR=$(JAR) >&2)
+endif
+
+-include $(GEN)/sources.mk
+
+TARGET := $(BUILD)/pvz
+RUNTIME_SRC := runtime/jvm.cpp runtime/natives_lang.cpp runtime/natives_lcdui.cpp runtime/natives_media.cpp \
+               runtime/port.cpp runtime/main.cpp runtime/midi.cpp game/pvz_port.cpp platform/platform_psp.cpp
+OBJS := $(patsubst %.cpp,$(BUILD)/gen/%.o,$(GEN_SOURCES)) $(patsubst %.cpp,$(BUILD)/%.o,$(RUNTIME_SRC)) \
+        $(BUILD)/runtime/resources.o
+
+INCDIR := runtime $(GEN)
+CFLAGS := $(if $(PROFILE),-DPVZ_PROFILE) -DPIX_ABGR -O2 -G0 -Wall -Wno-unused -Wno-invalid-offsetof -fwrapv -fno-strict-aliasing
+CXXFLAGS := -std=gnu++17
+LIBS := -lpspgu -lstdc++ -lm -lpspaudio -lpsppower -lpsputility -lpsprtc
+BUILD_PRX := 1
+PSP_FW_VERSION := 500
+
+EXTRA_TARGETS := $(BUILD)/ICON0.PNG $(BUILD)/EBOOT.PBP
+PSP_EBOOT := $(BUILD)/EBOOT.PBP
+PSP_EBOOT_SFO := $(BUILD)/PARAM.SFO
+PSP_EBOOT_TITLE := Plants vs. Zombies
+PSP_EBOOT_ICON := $(BUILD)/ICON0.PNG
+
+PSPSDK := $(shell psp-config --pspsdk-path)
+include $(PSPSDK)/lib/build.mak
+
+$(BUILD)/ICON0.PNG: $(JAR) tools/make_icon.py
+	@mkdir -p $(dir $@)
+	python3 tools/make_icon.py $(JAR) $@
+
+$(BUILD)/EBOOT.PBP: $(BUILD)/ICON0.PNG
+
+$(BUILD)/gen/%.o: $(GEN)/%.cpp runtime/jvm.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD)/runtime/resources.o: runtime/resources.cpp build/resources.bin
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -DRESOURCE_BLOB=$(abspath build/resources.bin) -c $< -o $@
+
+$(BUILD)/%.o: %.cpp $(wildcard runtime/*.h)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
