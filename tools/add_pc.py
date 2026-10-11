@@ -11,12 +11,44 @@ uso: add_pc.py gfx.pak anim.pak carpeta_pc salida_gfx.pak salida_anim.pak pc_ani
      extraido); Nombre = archivo sin extension (SplitPea, PeaShooterSingle, Zombie...); +Imagen = una imagen
      suelta de reanim/ (p. ej. +Zombie_balloon_outerarm_upper2, el brazo roto) -> #define PC_IMG_<IMAGEN>"""
 import sys, os, re, struct, math, json, tempfile
-from PIL import Image
+from PIL import Image, ImageEnhance
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_pak import convert
 
 SC = 0.375          # PC -> J2ME
 FIRST_IMG = 1500    # ids de las piezas del PC en gfx.pak
+
+# estilo del J2ME: los graficos del movil son mas cabezones, las plantas algo mas grandes, con contorno oscuro,
+# colores planos y bordes sin transparencias. Se aplica a las piezas y a las pistas al convertirlas.
+ZHEAD = re.compile(r'head|hat|hair|tongue|jaw|lips|snorkle$|propeller|eye', re.I)   # pistas de la cabeza (zombis)
+PHEAD = re.compile(r'face|head|mouth|blink|eyebrow', re.I)                         # (plantas con cabeza)
+HEADED_PLANTS = {'SplitPea', 'PeaShooterSingle', 'PeaShooter', 'SnowPea', 'Repeater', 'Threepeater', 'GatlingPea'}
+PLANT_SCALE = 1.15     # planta entera (alrededor de su base)
+PLANT_HEAD = 1.2       # cabeza de las plantas
+ZOMBIE_HEAD = 1.3      # cabeza de los zombis
+COLORS = 32            # colores por pieza
+
+
+def j2me_style(im):
+    """pieza ya reducida -> estilo J2ME: mas color, colores planos, borde duro y contorno oscuro de 1 px"""
+    im = im.convert('RGBA')
+    a = im.getchannel('A').point(lambda v: 255 if v >= 110 else 0)
+    rgb = ImageEnhance.Color(im.convert('RGB')).enhance(1.25)
+    rgb = ImageEnhance.Contrast(rgb).enhance(1.1)
+    rgb = rgb.quantize(COLORS, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert('RGB')
+    w, h = im.size
+    A, P = a.load(), rgb.load()
+    for y in range(h):
+        for x in range(w):
+            if not A[x, y]:
+                continue
+            edge = x == 0 or y == 0 or x == w - 1 or y == h - 1 or not (A[x - 1, y] and A[x + 1, y] and A[x, y - 1] and A[x, y + 1])
+            if edge:
+                r, g, b = P[x, y]
+                P[x, y] = (r * 50 // 100, g * 50 // 100, b * 50 // 100)
+    out = rgb.convert('RGBA')
+    out.putalpha(a)
+    return out
 
 
 def read_gfx(path):
@@ -142,7 +174,7 @@ def main():
         if not p:
             sys.exit('no encuentro la imagen ' + nm[1:])
         src = Image.open(p).convert('RGBA')
-        sm = src.resize((max(1, round(src.width * SC)), max(1, round(src.height * SC))), Image.LANCZOS)
+        sm = j2me_style(src.resize((max(1, round(src.width * SC)), max(1, round(src.height * SC))), Image.LANCZOS))
         hdr.append('#define PC_IMG_%s %d' % (re.sub(r'[^A-Z0-9]', '_', nm[1:].upper()), len(imgs)))
         imgs.append(pack_image(sm))
     for nm in [n for n in names if not n.startswith('+')]:
@@ -161,6 +193,7 @@ def main():
                     src = Image.open(p).convert('RGBA')
                     w, h = max(1, round(src.width * SC)), max(1, round(src.height * SC))
                     sm = src.resize((w, h), Image.LANCZOS)
+                    sm = j2me_style(sm)
                     imgid[im] = len(imgs)
                     sizes[imgid[im]] = (w, h)
                     imgs.append(pack_image(sm))
@@ -172,6 +205,20 @@ def main():
                     return (v[0], v[-1]) if v else None
             return None
         f0 = (ctrl_range('anim_idle') or (0, 0))[0]
+        # cuellos (abajo en el centro de la pieza de la cabeza) en cada frame, para agrandar la cabeza
+        pivots = [[] for _ in range(nf)]
+        if nm.startswith('Zombie') or nm in HEADED_PLANTS:
+            for name, frames in tracks:
+                for k in range(nf):
+                    f = frames[min(k, len(frames) - 1)]
+                    main = name == 'anim_head1' if nm.startswith('Zombie') else bool(re.search(r'_HEAD$', f['i'] or ''))
+                    if not main or f['f'] == -1 or imgid.get(f['i'], -1) < 0:
+                        continue
+                    W, H = sizes[imgid[f['i']]]
+                    kx, ky = -f['kx'] * math.pi / 180, -f['ky'] * math.pi / 180
+                    a, b = math.cos(kx) * f['sx'], -math.sin(kx) * f['sx']
+                    c, d = math.sin(ky) * f['sy'], math.cos(ky) * f['sy']
+                    pivots[k].append((f['x'] * SC + a * W / 2 + c * H, f['y'] * SC + b * W / 2 + d * H))
         xs, ys = [], []
         blob = bytearray()
         for name, frames in tracks:
@@ -180,12 +227,25 @@ def main():
                 img = imgid.get(f['i'], -1) if f['i'] else -1
                 vis = 1 if f['f'] != -1 and f['a'] > 0.05 else 0
                 x, y = f['x'] * SC, f['y'] * SC
+                sx, sy = f['sx'], f['sy']
                 kx, ky = -f['kx'] * math.pi / 180, -f['ky'] * math.pi / 180
-                blob += struct.pack('<6fhbB', x, y, f['sx'], f['sy'], kx, ky, img, vis, 0)
+                zombie = nm.startswith('Zombie')
+                hf = 1
+                if pivots[k] and (ZHEAD if zombie else PHEAD).search(name):
+                    # toda la cabeza (boca, ojos...) crece junta alrededor del cuello de la cabeza mas cercana
+                    hf = ZOMBIE_HEAD if zombie else PLANT_HEAD
+                    px, py = min(pivots[k], key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)
+                    x = px + (x - px) * hf; y = py + (y - py) * hf
+                    sx *= hf; sy *= hf
+                if not zombie:                      # planta entera mas grande, alrededor de su base (40, 80 del PC)
+                    bx, by = 40 * SC, 80 * SC
+                    x = bx + (x - bx) * PLANT_SCALE; y = by + (y - by) * PLANT_SCALE
+                    sx *= PLANT_SCALE; sy *= PLANT_SCALE
+                blob += struct.pack('<6fhbB', x, y, sx, sy, kx, ky, img, vis, 0)
                 if k == f0 and vis and img >= 0:
                     W, H = sizes[img]
-                    a, b = math.cos(kx) * f['sx'], -math.sin(kx) * f['sx']
-                    c, d = math.sin(ky) * f['sy'], math.cos(ky) * f['sy']
+                    a, b = math.cos(kx) * sx, -math.sin(kx) * sx
+                    c, d = math.sin(ky) * sy, math.cos(ky) * sy
                     for u, v in ((0, 0), (W, 0), (0, H), (W, H)):
                         xs.append(x + a * u + c * v)
                         ys.append(y + b * u + d * v)

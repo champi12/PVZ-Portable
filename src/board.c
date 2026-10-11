@@ -2547,6 +2547,19 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 200) plant_at(4, 3, PL_COFFEE);
     if (state == ST_PLAY) wave_timer = 9999;
 #endif
+#if defined(AUTOTEST) && defined(AT_STYLE)
+    /* comparar el estilo: J2ME (lanzaguisantes, seta de humo, zombi normal) junto a las del PC */
+    if (state == ST_PLAY && state_timer == 20) {
+        reanim_get(RE_PEASHOOTER); reanim_get(RE_FUMESHROOM);
+        plant_at(0, 2, PL_PEASHOOTER); plant_at(0, 3, PL_SPLITPEA); plant_at(1, 2, PL_FUMESHROOM); plant_at(1, 3, PL_GLOOM);
+        Zombie *a = spawn_zombie(ZT_NORMAL, 4, cell_x(5)), *b = spawn_zombie(ZT_BALLOON, 4, cell_x(6) + 5);
+        Zombie *c = spawn_zombie(ZT_NORMAL, 5, cell_x(5)), *e = spawn_zombie(ZT_BALLOON, 5, cell_x(6) + 5);
+        if (b) z_pop(b);
+        if (a) a->speed = 0.01f; if (b) b->speed = 0.01f; if (c) c->speed = 0.01f; if (e) e->speed = 0.01f;
+        sfx_stop_all();
+    }
+    if (state == ST_PLAY) { wave_timer = 9999; for (int i = 0; i < MAXZ; i++) if (Z[i].alive && Z[i].speed > 0.02f && Z[i].state == ZS_WALK) Z[i].speed = 0.01f; }
+#endif
 #if defined(AUTOTEST) && defined(AT_GLOOM)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_GLOOM, PL_CACTUS, PL_COBCANNON, PL_GATLING };
@@ -2615,7 +2628,7 @@ int board_update(void)
     }
     if (state == ST_PLAY) return BR_PLAYING;
 #endif
-#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM) && !defined(AT_E7) && !defined(AT_E9) && !defined(AT_E10) && !defined(AT_E11)
+#if defined(AUTOTEST) && !defined(AT_FX) && !defined(AT_PZOO) && !defined(AT_Z2) && !defined(AT_HUD) && !defined(AT_NEW) && !defined(AT_Z4) && !defined(AT_ROOFT) && !defined(AT_GLOOM) && !defined(AT_E7) && !defined(AT_E9) && !defined(AT_E10) && !defined(AT_E11) && !defined(AT_STYLE)
     if (state == ST_PLAY && frame % 40 == 0) {          /* juega solo: planta de todo */
         sun = 9000;
         int nb = bank_count();

@@ -13,6 +13,15 @@ static u32 offs[RE_COUNT + 1];
 static int re_count;
 static ReDef defs[RE_COUNT];
 int reanim_interp = 0;
+int reanim_pc_smooth = 0;   /* 0: las animaciones del PC van a saltos como las del J2ME (6 fps, sin interpolar) */
+#define PC_STEP 2           /* el PC anima a 12 fps: un frame de cada 2 */
+
+/* frame que se dibuja: las del PC, a saltos de PC_STEP frames desde el principio del rango */
+static float qframe(ReAnim *a, float fr)
+{
+    if (reanim_pc_smooth || !a->def || reanim_id(a->def) < RE_J2ME_COUNT || fr < a->start) return fr;
+    return a->start + floorf((fr - a->start) / PC_STEP) * PC_STEP;
+}
 
 int reanim_init(const char *pak)
 {
@@ -144,8 +153,9 @@ void reanim_draw_flip(ReAnim *a, float x, float y, float scale, int flipx, u32 c
 {
     ReDef *d = a->def;
     if (!d || (!d->block && !reanim_get(reanim_id(d)))) return;   /* liberada al cambiar de pantalla: se recarga */
-    int f0 = (int)a->frame;
-    float t = a->frame - f0;
+    float fr = qframe(a, a->frame);
+    int f0 = (int)fr;
+    float t = fr - f0;
     int f1 = f0 + 1;
     if (f1 > a->end) f1 = a->loop ? a->start : a->end;
     for (int tr = 0; tr < d->ntracks; tr++) {
@@ -154,7 +164,7 @@ void reanim_draw_flip(ReAnim *a, float x, float y, float scale, int flipx, u32 c
         if (!A->vis || A->img < 0) continue;
         ReFrame *B = &d->frames[tr * d->nframes + f1];
         float fx = A->x, fy = A->y, sx = A->sx, sy = A->sy, kx = A->kx, ky = A->ky;
-        if ((reanim_interp || a->interp) && B->vis && B->img == A->img && t > 0) {  /* interpolacion como el PC */
+        if ((reanim_interp || (a->interp && reanim_pc_smooth)) && B->vis && B->img == A->img && t > 0) {  /* interpolacion como el PC */
             fx += (B->x - A->x) * t; fy += (B->y - A->y) * t;
             sx += (B->sx - A->sx) * t; sy += (B->sy - A->sy) * t;
             kx += (B->kx - A->kx) * t; ky += (B->ky - A->ky) * t;
@@ -184,12 +194,13 @@ void reanim_track_matrix(ReAnim *a, int track, float frame, float m[6])
     m[0] = 1; m[1] = 0; m[2] = 0; m[3] = 1; m[4] = 0; m[5] = 0;
     if (d && !d->block && !reanim_get(reanim_id(d))) d = NULL;
     if (!d || track < 0 || track >= d->ntracks) return;
+    if (!reanim_pc_smooth) frame = qframe(a, frame);
     int f0 = (int)frame;
     if (f0 < 0) f0 = 0;
     if (f0 >= d->nframes) f0 = d->nframes - 1;
     int f1 = f0 + 1 > a->end ? (a->loop ? a->start : a->end) : f0 + 1;
     if (f1 >= d->nframes) f1 = d->nframes - 1;
-    float t = frame - (int)frame;
+    float t = a->interp && !reanim_pc_smooth && reanim_id(d) >= RE_J2ME_COUNT ? 0 : frame - (int)frame;
     ReFrame *A = &d->frames[track * d->nframes + f0], *B = &d->frames[track * d->nframes + f1];
     float x = A->x + (B->x - A->x) * t, y = A->y + (B->y - A->y) * t;
     float sx = A->sx + (B->sx - A->sx) * t, sy = A->sy + (B->sy - A->sy) * t;
@@ -222,7 +233,7 @@ void reanim_draw_m(ReAnim *a, float x, float y, float scale, const float *ov, u3
 {
     ReDef *d = a->def;
     if (!d || (!d->block && !reanim_get(reanim_id(d)))) return;   /* liberada al cambiar de pantalla: se recarga */
-    int f0 = (int)a->frame;
+    int f0 = (int)qframe(a, a->frame);
     for (int tr = 0; tr < d->ntracks; tr++) {
         if (tr < 64 && (a->hide_mask[tr >> 5] & (1u << (tr & 31)))) continue;
         ReFrame *A = &d->frames[tr * d->nframes + f0];

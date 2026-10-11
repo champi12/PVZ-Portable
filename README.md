@@ -24,6 +24,9 @@ Los datos van en `data/` (`gfx.pak`, `anim.pak`, `sfx.pak`, `music/`). Las anima
         SplitPea GloomShroom Coffeebean Zombie_balloon Zombie_snorkle Zombie_dolphinrider \
         +Zombie_balloon_outerarm_upper2 +Zombie_snorkle_outerarm_upper2 +Zombie_dolphinrider_outerarm_upper2
 
+Al convertirlas se les da el estilo del J2ME: cabezas más grandes, plantas algo mayores, contorno oscuro, colores
+planos y bordes duros; en el juego van a saltos (6 fps, sin interpolar) como las del móvil (`reanim_pc_smooth`).
+
 (siempre desde los `.pak` originales del J2ME y con todos los nombres a la vez: escribe también `src/pc_anims.h`,
 que hay que volver a compilar).
 
