@@ -62,8 +62,10 @@ GameSelectorOverlay::GameSelectorOverlay(GameSelector* theGameSelector)
 
 GameSelector::GameSelector(LawnApp* theApp)
 {
+#ifndef __PSP__  // PSP: se cargan al abrirlos (ShowZombatarScreen; el almanaque carga lo suyo): el menu sale antes
 	mLoadedResourceNames.push_back("DelayLoad_Zombatar");
 	mLoadedResourceNames.push_back("DelayLoad_Almanac");
+#endif
 
 	for (std::string& resource : mLoadedResourceNames)
 		PvzpLoadResources(resource.c_str());
@@ -1379,6 +1381,13 @@ void GameSelector::ShowZombatarScreen()
 {
 	if (!mZombatarWidget)
 		return;
+#ifdef __PSP__
+	if (std::find(mLoadedResourceNames.begin(), mLoadedResourceNames.end(), "DelayLoad_Zombatar") == mLoadedResourceNames.end())
+	{
+		mLoadedResourceNames.push_back("DelayLoad_Zombatar");
+		PvzpLoadResources("DelayLoad_Zombatar");
+	}
+#endif
 	if (mApp->mPlayerInfo && !mApp->mPlayerInfo->mZombatarAccepted)
 		mApp->ShowZombatarTOS();
 	else

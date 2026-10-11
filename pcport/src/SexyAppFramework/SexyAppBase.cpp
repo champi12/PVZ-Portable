@@ -3440,9 +3440,27 @@ void SexyAppBase::Init()
 #elif defined(__PSP__)
 	{
 		// PSP: los datos guardados junto al EBOOT (ms0:/PSP/GAME/...); SDL daria umd0:, que en la PSP es el UMD
+		// si esa carpeta no se puede escribir (p. ej. un EBOOT abierto desde fuera de la Memory Stick en un
+		// emulador, que la monta como disco de solo lectura), se usa ms0:/PSP/SAVEDATA/PVZPC/
+		auto aWritable = [](const std::string& theDir) {
+			std::error_code ec;
+			std::filesystem::create_directories(theDir, ec);
+			std::string aTest = theDir + "escritura.tmp";
+			FILE* f = fopen(aTest.c_str(), "wb");
+			if (!f)
+				return false;
+			bool ok = fwrite("ok", 1, 2, f) == 2;
+			fclose(f);
+			remove(aTest.c_str());
+			return ok;
+		};
 		char aCwd[256];
-		if (getcwd(aCwd, sizeof(aCwd)))
-			SetAppDataFolder(std::string(aCwd) + "/savedata/");
+		std::string aDir = getcwd(aCwd, sizeof(aCwd)) ? std::string(aCwd) + "/savedata/" : std::string();
+		if (aDir.empty() || aDir.compare(0, 3, "umd") == 0 || !aWritable(aDir))
+			aDir = "ms0:/PSP/SAVEDATA/PVZPC/";
+		aWritable(aDir);
+		SetAppDataFolder(aDir);
+		Sexy::LogInfoLn("Datos guardados en '{}'", aDir);
 	}
 #elif !defined(__SWITCH__)
 	{
