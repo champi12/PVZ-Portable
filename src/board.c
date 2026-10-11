@@ -154,7 +154,8 @@ typedef struct {
     int lcol;                 /* escalador: columna donde apoya la escalera (+1) */
     int garlic;               /* tiempo mordiendo un ajo */
     int flash;                /* zombis invisibles: se ven un momento al recibir un golpe */
-    float dxo;                /* desplazamiento de dibujo (delfin: la animacion lo lleva 36 px a la izquierda) */
+    float rate;               /* zombis del PC: velocidad de la animacion actual (0 = 1) */
+    float dxo;                /* desplazamiento de dibujo (delfin montado: +70 del PC) */
     float dy;                 /* desplazamiento al cambiar de fila (ajo), vuelve a 0 */
     ReAnim anim;
 } Zombie;
@@ -423,6 +424,9 @@ static int arm_track(int re)
     case RE_ZOMBIE_JACKBOX: return 8;     case RE_ZOMBIE_NEWSPAPER: return 11; case RE_ZOMBIE_LADDER: return 11;
     case RE_ZOMBIE_POGO: return 12;       case RE_ZOMBIE_DIGGER: return 15;    case RE_ZOMBIE_BALLOON: return 13;
     case RE_ZOMBIE_SNORKEL: return 14;    case RE_TC_DANCER: return 13;        case RE_TC_DOLPHIN: return 15;
+    case RE_PC_ZOMBIE_BALLOON: return PC_ZOMBIE_BALLOON_T_ZOMBIE_OUTERARM_LOWER;
+    case RE_PC_ZOMBIE_SNORKLE: return PC_ZOMBIE_SNORKLE_T_ZOMBIE_OUTERARM_LOWER;
+    case RE_PC_ZOMBIE_DOLPHINRIDER: return PC_ZOMBIE_DOLPHINRIDER_T_ZOMBIE_OUTERARM_LOWER;
     default: return -1;
     }
 }
@@ -434,13 +438,56 @@ static void anim_origin(ReAnim *a, float cx, float bottom, float *ox, float *oy)
      * derecha del centro de su caja, por eso parecia que comia desde lejos */
     static const float zfeet[16] = { 0, 70.6f, 26.1f, 23.4f, 52.4f, 53.3f, 35.2f, 24.9f, 25.4f, 34.7f, 30.2f, 29.0f, 30.4f, 34.6f, -1, 32.6f };
     int id = reanim_id(a->def);
+    if (id >= RE_PC_ZOMBIE_BALLOON && id <= RE_PC_ZOMBIE_DOLPHINRIDER) {
+        /* zombi del PC: su posicion (mPosX) es 57 px a la izquierda del centro de su rectangulo de golpe y la
+         * fila (mPosY) 30 px por encima de la casilla, cuyo suelo queda a 130 px; el globo va 13 px mas arriba
+         * (Zombie::GetPosYBasedOnRow y GetDrawPos) */
+        *ox = cx - 57 * 0.375f;
+        *oy = bottom - (130 + (id == RE_PC_ZOMBIE_BALLOON ? 13 : 0)) * 0.375f;
+        return;
+    }
     if (id == RE_ZOMBIE) { *ox = cx - ZAX; *oy = bottom - ZAY; }
     else if (id > 0 && id < 16 && zfeet[id] > 0) { *ox = cx - zfeet[id]; *oy = bottom - bb[3]; }
     else { *ox = cx - (bb[0] + bb[2]) / 2; *oy = bottom - bb[3]; }
 }
 
+/* piezas de los zombis del PC: brazo (se esconden la mano y el antebrazo y el brazo pasa a la imagen rota) y
+ * cabeza (al morir); como Zombie::DropArm y DropHead */
+typedef struct { int re, hand, lower, upper, upper2; u32 head[2]; } PcZParts;
+static const PcZParts pcz_parts[] = {
+    { RE_PC_ZOMBIE_BALLOON, PC_ZOMBIE_BALLOON_T_ZOMBIE_OUTERARM_HAND, PC_ZOMBIE_BALLOON_T_ZOMBIE_OUTERARM_LOWER,
+      PC_ZOMBIE_BALLOON_T_ZOMBIE_OUTERARM_UPPER, PC_IMG_ZOMBIE_BALLOON_OUTERARM_UPPER2,
+      { (1u << PC_ZOMBIE_BALLOON_T_ANIM_HEAD1) | (1u << PC_ZOMBIE_BALLOON_T_ANIM_HEAD2) | (1u << PC_ZOMBIE_BALLOON_T_HAT) | (1u << PC_ZOMBIE_BALLOON_T_PROPELLER), 0 } },
+    { RE_PC_ZOMBIE_SNORKLE, PC_ZOMBIE_SNORKLE_T_ZOMBIE_OUTERARM_HAND, PC_ZOMBIE_SNORKLE_T_ZOMBIE_OUTERARM_LOWER,
+      PC_ZOMBIE_SNORKLE_T_ZOMBIE_SNORKLE_OUTERARM_UPPER, PC_IMG_ZOMBIE_SNORKLE_OUTERARM_UPPER2,
+      { (1u << PC_ZOMBIE_SNORKLE_T_ANIM_HEAD1) | (1u << PC_ZOMBIE_SNORKLE_T_ANIM_HEAD_LIPS) | (1u << PC_ZOMBIE_SNORKLE_T_ANIM_HEAD_JAW) | (1u << PC_ZOMBIE_SNORKLE_T_ANIM_HEAD_SNORKLE), 0 } },
+    { RE_PC_ZOMBIE_DOLPHINRIDER, PC_ZOMBIE_DOLPHINRIDER_T_ZOMBIE_OUTERARM_HAND, PC_ZOMBIE_DOLPHINRIDER_T_ZOMBIE_OUTERARM_LOWER,
+      PC_ZOMBIE_DOLPHINRIDER_T_ZOMBIE_DOLPHINRIDER_OUTERARM_UPPER, PC_IMG_ZOMBIE_DOLPHINRIDER_OUTERARM_UPPER2,
+      { (1u << PC_ZOMBIE_DOLPHINRIDER_T_ANIM_HEAD1) | (1u << PC_ZOMBIE_DOLPHINRIDER_T_ANIM_HEAD2), 0 } },
+};
+static const PcZParts *pcz(Zombie *z)
+{
+    int id = reanim_id(z->anim.def);
+    for (unsigned k = 0; k < sizeof(pcz_parts) / sizeof(pcz_parts[0]); k++) if (pcz_parts[k].re == id) return &pcz_parts[k];
+    return NULL;
+}
+static int z_head_track(Zombie *z)
+{
+    int id = reanim_id(z->anim.def);
+    return id == RE_PC_ZOMBIE_BALLOON ? PC_ZOMBIE_BALLOON_T_ANIM_HEAD1 : id == RE_PC_ZOMBIE_SNORKLE ? PC_ZOMBIE_SNORKLE_T_ANIM_HEAD1 :
+           id == RE_PC_ZOMBIE_DOLPHINRIDER ? PC_ZOMBIE_DOLPHINRIDER_T_ANIM_HEAD1 : -1;
+}
+
 static void z_parts(Zombie *z)
 {
+    const PcZParts *pp = pcz(z);
+    if (pp) {
+        u32 m[2] = { 0, 0 };
+        if (z->arm_lost) { m[pp->hand >> 5] |= 1u << (pp->hand & 31); m[pp->lower >> 5] |= 1u << (pp->lower & 31); }
+        if (z->state == ZS_DYING) { m[0] |= pp->head[0]; m[1] |= pp->head[1]; }
+        z->anim.hide_mask[0] = m[0]; z->anim.hide_mask[1] = m[1];
+        return;
+    }
     if (zd(z)->re != RE_ZOMBIE) {
         u32 m = 0;
         if (z->arm_lost && arm_track(zd(z)->re) >= 0) m |= 1u << arm_track(zd(z)->re);   /* el brazo caido ya no se dibuja */
@@ -469,12 +516,83 @@ static void z_parts(Zombie *z)
     z->anim.hide_mask[0] = m;
 }
 
+/* zombis del PC: la logica sigue pidiendo los rangos del J2ME (o del Tencent) y aqui se cambian por las pistas de
+ * control del PC; devuelve tambien la velocidad (fps del PC / 12; 0 = la del suelo, para que los pies no patinen) */
+static int z_pc_range(Zombie *z, int *s, int *e, float *rate)
+{
+    int a = *s, ps = -1, pe = -1; *rate = 1;
+#define R(n) (ps = n##_S, pe = n##_E)
+    switch (zd(z)->re) {
+    case RE_PC_ZOMBIE_BALLOON:
+        if (a <= 7) R(PC_ZOMBIE_BALLOON_ANIM_IDLE);                         /* volando */
+        else if (a <= 14) { R(PC_ZOMBIE_BALLOON_ANIM_POP); *rate = 2; }     /* revienta el globo: 24 fps */
+        else if (a <= 20) { R(PC_ZOMBIE_BALLOON_ANIM_WALK); *rate = 0; }
+        else if (a <= 31) R(PC_ZOMBIE_BALLOON_ANIM_EAT);
+        else R(PC_ZOMBIE_BALLOON_ANIM_DEATH);
+        break;
+    case RE_PC_ZOMBIE_SNORKLE:
+        if (a < 6) R(PC_ZOMBIE_SNORKLE_ANIM_IDLE);
+        else if (a <= 14) { R(PC_ZOMBIE_SNORKLE_ANIM_WALK); *rate = 0; }
+        else if (a <= 19) { R(PC_ZOMBIE_SNORKLE_ANIM_JUMPINPOOL); *rate = 16 / 12.0f; }
+        else if (a <= 21) R(PC_ZOMBIE_SNORKLE_ANIM_SWIM);
+        else if (a <= 24) { R(PC_ZOMBIE_SNORKLE_ANIM_UPTOEAT); *rate = 2; }
+        else if (a <= 30) R(PC_ZOMBIE_SNORKLE_ANIM_EAT);
+        else R(PC_ZOMBIE_SNORKLE_ANIM_DEATH);
+        break;
+    case RE_PC_ZOMBIE_DOLPHINRIDER:
+        if (a < 4) R(PC_ZOMBIE_DOLPHINRIDER_ANIM_IDLE);
+        else if (a <= 13) { R(PC_ZOMBIE_DOLPHINRIDER_ANIM_WALKDOLPHIN); *rate = 0; }
+        else if (a <= 34) { R(PC_ZOMBIE_DOLPHINRIDER_ANIM_JUMPINPOOL); *rate = 16 / 12.0f; }
+        else if (a == 35) R(PC_ZOMBIE_DOLPHINRIDER_ANIM_RIDE);
+        else if (a <= 41) { R(PC_ZOMBIE_DOLPHINRIDER_ANIM_DOLPHINJUMP); *rate = 10 / 12.0f; }
+        else if (a <= 51) { if (z->inwater) R(PC_ZOMBIE_DOLPHINRIDER_ANIM_SWIM); else R(PC_ZOMBIE_DOLPHINRIDER_ANIM_WALK); *rate = 0; }
+        else if (a <= 62) R(PC_ZOMBIE_DOLPHINRIDER_ANIM_EAT);
+        else R(PC_ZOMBIE_DOLPHINRIDER_ANIM_DEATH);
+        break;
+    default: return 0;
+    }
+#undef R
+    *s = ps; *e = pe;
+    return 1;
+}
+static int z_pc_ground(int re)
+{
+    return re == RE_PC_ZOMBIE_BALLOON ? PC_ZOMBIE_BALLOON_T__GROUND : re == RE_PC_ZOMBIE_SNORKLE ? PC_ZOMBIE_SNORKLE_T__GROUND :
+           re == RE_PC_ZOMBIE_DOLPHINRIDER ? PC_ZOMBIE_DOLPHINRIDER_T__GROUND : -1;
+}
+
 static void z_anim(Zombie *z, int s, int e, int loop)
 {
     if (s < 0) return;
+    float rate = 1;
+    if (z_pc_range(z, &s, &e, &rate)) {
+        if (z->anim.def && z->anim.start == s && z->anim.end == e && z->anim.loop == loop) return;
+        reanim_play(&z->anim, zd(z)->re, s, e, loop);
+        z->anim.interp = 1;
+        if (rate == 0) {                       /* andar: la pista _ground dice cuanto avanza por frame (como el PC) */
+            float m0[6], m1[6];
+            reanim_track_matrix(&z->anim, z_pc_ground(zd(z)->re), (float)s, m0);
+            reanim_track_matrix(&z->anim, z_pc_ground(zd(z)->re), (float)e, m1);
+            float px = fabsf(m1[4] - m0[4]) / (e - s > 0 ? e - s : 1);
+            rate = px > 0.05f ? z->speed * 100 / (px * z->anim.def->fps) : 1;
+            if (rate > 3) rate = 3;
+        }
+        z->rate = rate;
+        z_parts(z);
+        return;
+    }
+    z->rate = 0;
     if (z->anim.def && z->anim.start == s && z->anim.end == e && z->anim.loop == loop) return;
     reanim_play(&z->anim, zd(z)->re, s, e, loop);
     z_parts(z);
+}
+
+/* globo pinchado: anim_pop (revienta y cae 25 px, como Zombie::LandFlyer) y luego anda */
+static void z_pop(Zombie *z)
+{
+    z->balloon = 0; z->speed = 0.064f; sfx_play(SFX_BALLOON_POP);
+    z->dy = -25 * 0.375f;
+    if (z->state < ZS_DYING) { z->state = ZS_SPECIAL; z_anim(z, 8, 14, 0); }
 }
 
 /* rango de andar/comer segun el estado (pertiga sin pertiga, periodico roto, nadando...) */
@@ -563,9 +681,9 @@ static void z_kill(Zombie *z, int charred)
         if (zd(z)->re == RE_ZOMBIE && !z->balloon) {
             if (!z->arm_lost) { z_drop(z, 20, 350); z->arm_lost = 1; }
             z_drop(z, 19, 78);                        /* la cabeza cae rodando */
-        }
+        } else if (pcz(z) && !z->balloon) z_drop(z, z_head_track(z), -1);   /* zombi del PC: tambien pierde la cabeza */
         if (z->inwater && zd(z)->re == RE_ZOMBIE) { reanim_play(&z->anim, RE_ZOMBIE, 50, 55, 0); z_parts(z); }
-        else if (zd(z)->die_s >= 0) { reanim_play(&z->anim, zd(z)->re, zd(z)->die_s, zd(z)->die_e, 0); z_parts(z); }
+        else if (zd(z)->die_s >= 0) { reanim_play(&z->anim, zd(z)->re, zd(z)->die_s, zd(z)->die_e, 0); z_parts(z); if (pcz(z)) { z->anim.def = NULL; z_anim(z, zd(z)->die_s, zd(z)->die_e, 0); } }
         else z->fade = 100;
         sfx_play(z->type == ZT_GARGANTUAR ? SFX_GARGANTUDEATH : SFX_LIMBS_POP);
     }
@@ -722,7 +840,7 @@ static void update_zombies(void)
         if (z->butter > 0) { z->butter--; z->anim.speed = 0; continue; }
         float slow = z->chill > 0 ? 0.5f : 1.0f;
         if (z->chill > 0) z->chill--;
-        z->anim.speed = slow * (lv == LV_MG_FAST ? 2.0f : 1);
+        z->anim.speed = slow * (lv == LV_MG_FAST ? 2.0f : 1) * (z->rate > 0 ? z->rate : 1);
         if (z->flash > 0) z->flash--;
         if (z->hypno) { hypno_fight(z); continue; }
         const ZombieDef *d = zd(z);
@@ -730,7 +848,7 @@ static void update_zombies(void)
         /* --- animaciones de una vez (romper el periodico, salir de la tierra, caer del globo, saltar) --- */
         if (z->state == ZS_SPECIAL) {
             if (reanim_done(&z->anim) && z->type == ZT_DOLPHIN && z->ammo == 1) {   /* ya se ha subido al delfin */
-                z->ammo = 2; z->x -= 36; z->dxo = 36; z->speed = 0.2f; z->state = ZS_WALK; z_walk(z); continue;
+                z->ammo = 2; z->x -= 70 * 0.375f; z->dxo = 70 * 0.375f; z->speed = 0.2f; z->state = ZS_WALK; z_walk(z); continue;   /* PC: mPosX -= 70 */
             }
             if (reanim_done(&z->anim) && z->type == ZT_JACK && z->summoned) {
                 sfx_play(SFX_EXPLOSION);
@@ -766,7 +884,7 @@ static void update_zombies(void)
                 }
             } else if (z->type == ZT_DOLPHIN) {        /* salto del delfin (36-41): la animacion lo lleva 43 px a la izquierda */
                 if (reanim_done(&z->anim)) {
-                    z->x -= 43; z->dxo = 0; z->jumped = 1; z->ammo = 3; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z);
+                    z->x -= 94 * 0.375f; z->dxo = 0; z->jumped = 1; z->ammo = 3; z->speed = 0.064f; z->state = ZS_WALK; z_walk(z);   /* PC: mPosX -= 94 */
                 }
             } else {                                  /* saltarin: brinco por encima de la planta */
                 float f = (++z->timer) / 60.0f;
@@ -1501,7 +1619,7 @@ static void update_projectiles(void)
                 float tx = z->x, ty = cy_x(z->row, z->x) + G.rh * (z->balloon ? -0.2f : 0.4f);
                 float dx = tx - q->x, dy = ty - q->y, d = sqrtf(dx * dx + dy * dy);
                 if (d < 8) {
-                    if (z->balloon) { z->balloon = 0; z->speed = 0.064f; z->dy = -G.rh * 1.05f; sfx_play(SFX_BALLOON_POP); z_anim(z, zd(z)->walk_s, zd(z)->walk_e, 1); }
+                    if (z->balloon) { z_pop(z); }
                     else { z_damage(z, q->dmg, 0, 0); burst(PS_GREENBIT, q->x, q->y, 2, 0.5f); }
                     q->alive = 0; continue;
                 }
@@ -1625,7 +1743,7 @@ static void update_projectiles(void)
             float back = first ? q->x0 : q->x - q->vx;   /* tramo recorrido este tick (hacia atras: guisantralla) */
             float lo = back < q->x ? back : q->x, hi = back < q->x ? q->x : back;
             if (z->type == ZT_BOSS ? q->x >= cell_x(7) : (hi >= z->x - 8 && lo <= z->x + 10)) {
-                if (z->balloon && q->kind == PJ_SPIKE) { z->balloon = 0; z->speed = 0.064f; z->dy = -G.rh * 1.05f; sfx_play(SFX_BALLOON_POP); z_anim(z, zd(z)->walk_s, zd(z)->walk_e, 1); }
+                if (z->balloon && q->kind == PJ_SPIKE) { z_pop(z); }
                 else {
                     z_damage(z, q->dmg, 1, q->kind == PJ_SNOW);
                     static const signed char hitfx[] = { PS_PEA, PS_SNOW, PS_FLAME, PS_PUFF, PS_GREENBIT, PS_STARY, -1, -1, -1, -1, -1, -1, PS_PUFF, -1, -1 };
@@ -2017,7 +2135,8 @@ static void setup_preview(void)
         z->alive = 1; z->type = t; z->dir = -1; z->x = pos[i][0] + frnd(-3, 3); z->yoff = pos[i][1] + 6 + dy;
         z->hp = d->hp; z->helm = z->maxhelm = d->helm; z->shield = z->maxshield = d->shield;
         reanim_play(&z->anim, d->re, z_idle[t][0], z_idle[t][1], 1);
-        z->anim.frame += frnd(0, z_idle[t][1] - z_idle[t][0]);
+        if (d->re >= RE_J2ME_COUNT) { z->anim.def = NULL; z_anim(z, 0, 0, 1); }   /* zombi del PC: su anim_idle */
+        z->anim.frame += frnd(0, z->anim.end - z->anim.start);
         z->anim.speed = frnd(0.6f, 0.9f);
         z_parts(z);
     }
@@ -2809,15 +2928,35 @@ static void draw_zombie(Zombie *z, float base)
     if (z->butter > 0) col = 0xFF80FFFF;
     if (z->state >= ZS_DYING && z->fade < 100) col = (col & 0x00FFFFFF) | ((u32)(z->fade * 255 / 100) << 24);
     if (z->type == ZT_BOSS) return;   /* se dibuja aparte, encima del seto */
-    float yo = z->yoff + z->dy + (z->balloon ? -G.rh * 1.1f : z->type == ZT_BALLOON ? -5 : 0);   /* globo: bien alto; ya en el suelo, sus pies van 5 px mas bajos en la animacion */
-    if (z->inwater) yo += G.rh * (z->type == ZT_DOLPHIN ? (z->jumped ? 0.85f : 0.07f) : z->type == ZT_SNORKEL ? -0.28f : 0.22f);   /* nadando (el buzo ya va bajo en su animacion) */
+    const PcZParts *pp = pcz(z);
+    float yo = z->yoff + z->dy, clip = -1;
+    if (pp) {
+        /* zombis del PC (Zombie::GetDrawPos): el globo vuela 25 px alto; el delfin sin delfin va 50 px hundido; en el
+         * agua se corta por debajo de la superficie (clip = fila de la animacion por la que se corta) */
+        const float k = 0.375f;
+        float t = z->anim.end > z->anim.start ? (z->anim.frame - z->anim.start) / (z->anim.end - z->anim.start) : 0;
+        if (z->balloon) yo -= 25 * k;
+        if (z->type == ZT_SNORKEL && z->inwater) clip = 118;
+        if (z->type == ZT_DOLPHIN && z->inwater) {
+            if (z->ammo == 1) clip = t >= 0.75f ? 123 : t >= 0.56f && t <= 0.65f ? 113 : -1;
+            else if (z->ammo == 2 && z->state == ZS_JUMP) clip = t <= 0.06f ? 123 : t >= 0.5f && t <= 0.76f ? 126 : -1;
+            else if (z->ammo == 2) clip = 123;
+            else { yo += 50 * k; if (z->state >= ZS_DYING) clip = 69; }
+        }
+        if (clip >= 0) clip = base + 1 + yo + (clip - 130) * k;
+    } else {
+        yo += z->balloon ? -G.rh * 1.1f : 0;
+        if (z->inwater) yo += G.rh * 0.22f;
+    }
     if (z->kelped) gfx_clip(0, 0, SCREEN_W, (int)syw(base - G.rh * 0.25f));   /* hundiendose: corta en la superficie */
+    else if (clip >= 0) gfx_clip(0, 0, SCREEN_W, (int)syw(clip));
     else if (z->state < ZS_DYING && !z->under && !z->inwater) gfx_draw_ex(IMG_SHADOW, sxw(z->x), syw(base), 28, 11, 0.55f * G.ws, 0.5f * G.ws, 0, 0x50FFFFFF, 0);
-    if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped) gfx_noclip(); return; }   /* invisibles: solo su sombra */
+    if (lv == LV_MG_INVISI && z->state < ZS_DYING && z->flash <= 0 && state == ST_PLAY) { if (z->kelped || clip >= 0) gfx_noclip(); return; }   /* invisibles: solo su sombra */
     if (lv == LV_MG_INVISI && z->state < ZS_DYING && state == ST_PLAY) col = (col & 0x00FFFFFF) | 0x90000000;
     /* cara de asco (ajo): la cabeza 19 del zombi normal se cambia por la del PC con la lengua fuera */
     int yuck = z->garlic != 0 && zd(z)->re == RE_ZOMBIE && z->state < ZS_DYING && z->dir < 0 && !(z->anim.hide_mask[0] & (1u << 19));
     if (yuck) { reanim_swap_track = 19; reanim_swap_img = IMG_YUCK; }   /* misma posicion y giro que la cabeza */
+    if (pp && z->arm_lost) { reanim_swap_track = pp->upper; reanim_swap_img = pp->upper2; }   /* brazo roto */
     draw_anim_at(&z->anim, z->x + z->dxo, base + 1 + yo, col, z->dir > 0);
     reanim_swap_track = -1;
     if (z->butter > 0 && z->state < ZS_DYING) {            /* mantequilla en la cabeza */
@@ -2825,7 +2964,7 @@ static void draw_zombie(Zombie *z, float base)
         if (z_track_pos(z, 19, &hx, &hy, &img)) draw_world_c(IMG_BUTTER, hx, hy - 4, 1, WHITE);
         else if (z->anim.def) draw_world_c(IMG_BUTTER, z->x + 2, base + 1 + yo - (z->anim.def->bbox[3] - z->anim.def->bbox[1]) * 0.85f, 1, WHITE);
     }
-    if (z->kelped) gfx_noclip();
+    if (z->kelped || clip >= 0) gfx_noclip();
 }
 
 static void proj_img(Proj *q, int *img, float *sc)

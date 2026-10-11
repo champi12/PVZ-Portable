@@ -191,10 +191,10 @@ static const ZombieDef zombie_defs[ZT_COUNT] = {
  { RE_ZOMBIE_CATAPULT,   850, 0,    0,    0.080f, ZF_CATAPULT,           0,6,    7,14,  18,21, 0 },              /* zombipulta */
  { RE_ZOMBIE_POGO,       500, 0,    0,    0.120f, ZF_POGO,               8,18,  19,28,  29,38, 0 },              /* saltarin */
  { RE_ZOMBIE_DIGGER,     270, 100,  0,    0.150f, ZF_DIG,                5,13,  14,21,  22,31, 0 },              /* picado */
- { RE_ZOMBIE_BALLOON,    270, 0,    0,    0.064f, ZF_FLY,               15,20,  21,31,  32,38, 0 },              /* globo */
+ { RE_PC_ZOMBIE_BALLOON, 270, 0,    0,    0.064f, ZF_FLY,               15,20,  21,31,  32,38, 0 },              /* globo */
  { RE_ZOMBIE,            270, 0,    0,    0.064f, ZF_SWIM,               8,19,  20,29,  30,39, (1u<<16)|(1u<<17) }, /* playero */
- { RE_ZOMBIE_SNORKEL,    270, 0,    0,    0.064f, ZF_SWIM,               6,14,  25,30,  31,39, 0 },              /* buzo */
- { RE_TC_DOLPHIN,        500, 0,    0,    0.120f, ZF_SWIM | ZF_JUMP,    42,51,  52,62,  63,71, 0 },              /* delfin (Tencent: 4-13 en tierra, 36-41 salto, 52-62 sin delfin) */
+ { RE_PC_ZOMBIE_SNORKLE, 270, 0,    0,    0.064f, ZF_SWIM,               6,14,  25,30,  31,39, 0 },              /* buzo */
+ { RE_PC_ZOMBIE_DOLPHINRIDER, 500, 0,    0,    0.120f, ZF_SWIM | ZF_JUMP,    42,51,  52,62,  63,71, 0 },              /* delfin (Tencent: 4-13 en tierra, 36-41 salto, 52-62 sin delfin) */
  { RE_BOSS,            40000, 0,    0,    0.0f,   0,                     0,8,    0,8,    0,8,   0 },              /* Dr. Zombi */
  { RE_ZOMBIE_IMP,        270, 0,    0,    0.100f, ZF_SMALL,              9,16,   0,8,   17,23, 0 },              /* zombidito */
 };
