@@ -1150,7 +1150,12 @@ uint32_t* MemoryImage::GetBits()
 				*(aDestPtr++) = (r << 16) | (g << 8) | (b) | (anAlpha << 24);
 			}
 		}
+#ifdef __PSP__
+		// PSP: la lectura de la textura la hace la CPU (psp/gl_gu.cpp), vale desde cualquier hilo
+		else if (mRenderData == nullptr || !mApp->mGLInterface->RecoverBits(this))
+#else
 		else if (mRenderData == nullptr || mApp->mPrimaryThreadId != std::this_thread::get_id() || !mApp->mGLInterface->RecoverBits(this))
+#endif
 		{
 			std::unique_ptr<ImageLib::Image> aLoadedImage;
 			if (!mFilePath.empty())

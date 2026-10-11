@@ -18,4 +18,5 @@ void PspNavCollect(LawnApp* theApp, std::vector<NavTarget>& theTargets);
 int PspNavPick(const std::vector<NavTarget>& theTargets, float theX, float theY, int theDirX, int theDirY);
 // identifica la pantalla actual (para volver a la seleccion inicial al cambiar) y la seleccion inicial
 void* PspNavScreen(LawnApp* theApp);
-int PspNavDefault(LawnApp* theApp, const std::vector<NavTarget>& theTargets);
+// theNotReady: la seleccion inicial aun no esta en pantalla (se vuelve a pedir)
+int PspNavDefault(LawnApp* theApp, const std::vector<NavTarget>& theTargets, bool* theNotReady);

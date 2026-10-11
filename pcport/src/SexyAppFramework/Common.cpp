@@ -304,6 +304,12 @@ bool Sexy::IsPathRooted(std::string_view thePath)
 	if (thePath.empty())
 		return false;
 
+#ifdef __PSP__
+	// PSP: las rutas completas empiezan por el dispositivo ("ms0:/", "umd0:/", "ef0:/")
+	size_t aColon = thePath.find(':');
+	if (aColon != std::string_view::npos && aColon < thePath.find('/'))
+		return true;
+#endif
 	const std::filesystem::path aPath = PathFromU8(thePath);
 	if (aPath.has_root_path())
 		return true;

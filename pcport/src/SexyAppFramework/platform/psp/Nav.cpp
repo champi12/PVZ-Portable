@@ -216,16 +216,19 @@ void* PspNavScreen(LawnApp* theApp)
 	return theApp->mTitleScreen.get();
 }
 
-int PspNavDefault(LawnApp* theApp, const std::vector<NavTarget>& theTargets)
+int PspNavDefault(LawnApp* theApp, const std::vector<NavTarget>& theTargets, bool* theNotReady)
 {
+	*theNotReady = false;
 	if (theTargets.empty())
 		return -1;
-	// menu principal: Aventura
-	if (theApp->GetDialogCount() == 0 && theApp->mGameSelector && theApp->mGameSelector->mAdventureButton)
+	// menu principal: Aventura (mientras entra el menu aun no esta en pantalla: se vuelve a intentar)
+	if (theApp->GetDialogCount() == 0 && theApp->mGameSelector && theApp->mGameSelector->mAdventureButton &&
+		!theApp->mSeedChooserScreen && !theApp->mBoard)
 	{
 		for (int i = 0; i < (int)theTargets.size(); i++)
 			if (theTargets[i].mWidget == theApp->mGameSelector->mAdventureButton)
 				return i;
+		*theNotReady = true;
 	}
 	// dialogo: el boton de abajo en el centro (Aceptar); si no, lo mas cercano al centro de la pantalla
 	if (theApp->GetDialogCount() > 0 && !theApp->mDialogList.empty())

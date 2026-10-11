@@ -18,6 +18,9 @@
 #include <pspintrman.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <string>
+#include <algorithm>
 #include <pspiofilemgr.h>
 #include <math.h>
 #include <vector>
@@ -145,6 +148,35 @@ static void DrawCursor()
 	sceGuDrawArray(GU_TRIANGLES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, 6, 0, v);
 }
 
+/* registro de rendimiento para probar en la consola (L + R + START lo enciende y apaga): cada segundo escribe
+ * en rendimiento.txt (carpeta de datos) los fps, las actualizaciones, el peor fotograma, la memoria y la pantalla */
+namespace Sexy { std::string GetAppDataFolder(); }
+static bool gPspLogOn = false;
+static const char *gPspScreen = "";
+static float gWorstFrameMs = 0;
+static void PspLogLine(const char *fmt, ...)
+{
+	if (!gPspLogOn) return;
+	std::string path = Sexy::GetAppDataFolder() + "rendimiento.txt";
+	FILE *f = fopen(path.c_str(), "a");
+	if (!f) return;
+	va_list ap; va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap);
+	fputc('\n', f);
+	fclose(f);
+}
+void PspLogToggle()
+{
+	if (gPspLogOn) { PspLogLine("--- registro apagado ---"); gPspLogOn = false; return; }
+	gPspLogOn = true;
+	PspLogLine("--- registro encendido (segundo, FPS, L = actualizaciones/s de 100, peor = fotograma mas lento en ms, memoria, pantalla) ---");
+}
+void PspLogScreen(const char *name)
+{
+	if (strcmp(name, gPspScreen) == 0) return;
+	gPspScreen = name;
+	PspLogLine("%6.1f s  >> %s", sceKernelGetSystemTimeWide() / 1e6, name);
+}
+
 /* contador de fps real (arriba a la izquierda): fotogramas dibujados y actualizaciones de la logica del
  * juego por segundo (el juego va a 100 por segundo; si baja, el juego va lento) */
 volatile int gPspLogicUpdates = 0;
@@ -158,6 +190,12 @@ static void DrawFpsCounter()
 		sFps = (int)((sFrames * 1000000ull + (now - sT0) / 2) / (now - sT0));
 		sUps = (int)(((gPspLogicUpdates - sU0) * 1000000ull + (now - sT0) / 2) / (now - sT0));
 		sT0 = now; sFrames = 0; sU0 = gPspLogicUpdates;
+		if (gPspLogOn) {
+			struct mallinfo mi = mallinfo();
+			PspLogLine("%6.1f s  FPS %2d  L %3d  peor %4.0f ms  memoria %5d KB (texturas %5ld KB)  %s",
+				now / 1e6, sFps, sUps, gWorstFrameMs, mi.uordblks / 1024, gTexBytes / 1024, gPspScreen);
+		}
+		gWorstFrameMs = 0;
 	}
 	/* letras de 3x5 */
 	static const unsigned short font[] = {
@@ -166,7 +204,7 @@ static void DrawFpsCounter()
 	char txt[24]; snprintf(txt, sizeof(txt), "FPS%3d L%3d", sFps, sUps);
 	struct V { uint32_t c; float x, y, z; };
 	int n = 0; for (const char *p = txt; *p; p++) n++;
-	V *v = (V *)sceGuGetMemory((2 + n * 15 * 2) * sizeof(V));
+	V *v = (V *)sceGuGetMemory((4 + n * 15 * 2) * sizeof(V));
 	int k = 0;
 	v[k++] = { 0xA0000000, 2, 2, 0 }; v[k++] = { 0xA0000000, 4.0f + n * 8, 16, 0 };
 	for (int i = 0; i < n; i++) {
@@ -178,6 +216,7 @@ static void DrawFpsCounter()
 			v[k++] = { col, x, y, 0 }; v[k++] = { col, x + 2, y + 2, 0 };
 		}
 	}
+	if (gPspLogOn) { v[k++] = { 0xFF2020FF, 6.0f + n * 8, 4, 0 }; v[k++] = { 0xFF2020FF, 12.0f + n * 8, 14, 0 }; }   /* registrando */
 	sceGuDisable(GU_TEXTURE_2D);
 	sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
 	sceGuDrawArray(GU_SPRITES, GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D, k, 0, v);
@@ -206,6 +245,12 @@ void PspGuFrameForOsk()
 void PspStartWatchdog();
 void PspSwap()
 {
+	{   /* fotograma mas lento de cada segundo (para el registro) */
+		static uint64_t sLastSwap = 0;
+		uint64_t t = sceKernelGetSystemTimeWide();
+		if (sLastSwap) gWorstFrameMs = std::max(gWorstFrameMs, (t - sLastSwap) / 1000.0f);
+		sLastSwap = t;
+	}
 	static int sFrames;
 	gSwaps++;
 	if (++sFrames % 120 == 0) PspMemReport("frame");
@@ -500,7 +545,7 @@ void PspGLInit()
 
 /* sin memoria: dejar constancia antes de abortar */
 #include <new>
-static void PspOutOfMemory() { PspMemReport("SIN MEMORIA"); std::set_new_handler(nullptr); }
+static void PspOutOfMemory() { PspLogLine("!!! SIN MEMORIA"); PspMemReport("SIN MEMORIA"); std::set_new_handler(nullptr); }
 static struct PspNewHandler { PspNewHandler() { std::set_new_handler(PspOutOfMemory); } } sPspNewHandler;
 
 /* vigilante: si no se dibuja nada en 8 s, anota el ultimo punto de control (PSPW) */

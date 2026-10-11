@@ -196,8 +196,10 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 			navMode = true;
 			static void *sScreen = nullptr;
 			void *scr = PspNavScreen(app);
-			int cur = scr != sScreen ? PspNavDefault(app, sTargets) : PspNavPick(sTargets, gCurX, gCurY, 0, 0);
-			sScreen = scr;
+			bool notReady = false;
+			int cur = scr != sScreen ? PspNavDefault(app, sTargets, &notReady) : PspNavPick(sTargets, gCurX, gCurY, 0, 0);
+			if (cur < 0) cur = PspNavPick(sTargets, gCurX, gCurY, 0, 0);
+			if (!notReady || dirX || dirY) sScreen = scr;
 			Slider *sl = cur >= 0 ? dynamic_cast<Slider *>(sTargets[cur].mWidget) : nullptr;
 			if (sl && dirX && sl->mListener) {
 				double v = std::clamp<double>(sl->mVal + dirX * 0.1, 0.0, 1.0);
@@ -230,6 +232,13 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 			mLastUserInputTick = mLastTimerTime;
 			mWidgetManager->MouseMove((int)gCurX, (int)gCurY);
 		}
+	}
+	/* nombre de la pantalla para el registro de rendimiento */
+	{
+		const char *scr = GetDialogCount() > 0 ? "dialogo" : inLevel ? "nivel" :
+			app->mSeedChooserScreen ? "elegir plantas" : bd ? "nivel (presentacion)" :
+			app->mAwardScreen ? "premio" : app->mGameSelector ? "menu" : app->mTitleScreen ? "titulo / carga" : "otra";
+		PspLogScreen(scr);
 	}
 	/* en las presentaciones de un nivel no hay nada que elegir ni cursor que mostrar */
 	PspSetFocus(navMode || bd != nullptr, focus.mX, focus.mY, focus.mWidth, focus.mHeight);
@@ -285,6 +294,10 @@ bool SexyAppBase::ProcessDeferredMessages([[maybe_unused]] bool singleMessage)
 	} else {
 		if (down & PSP_CTRL_CIRCLE) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
 		if (up & PSP_CTRL_CIRCLE) mWidgetManager->KeyUp(KEYCODE_ESCAPE);
+	}
+	if ((down & PSP_CTRL_START) && (b & PSP_CTRL_LTRIGGER) && (b & PSP_CTRL_RTRIGGER)) {
+		PspLogToggle();   /* L + R + START: registro de rendimiento */
+		down &= ~PSP_CTRL_START; up &= ~PSP_CTRL_START;
 	}
 	if (down & PSP_CTRL_START) mWidgetManager->KeyDown(KEYCODE_ESCAPE);
 	if (up & PSP_CTRL_START) mWidgetManager->KeyUp(KEYCODE_ESCAPE);

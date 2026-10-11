@@ -64,7 +64,9 @@ void PspSetCameraY(float y);
 float PspGetCameraY();
 void PspSetViewMode(int mode);   // 0 = 16:9, 1 = 4:3 con bandas, 2 = zoom siguiendo al cursor
 int PspGetViewMode();
-void PspSetFocus(bool on, int x, int y, int w, int h);   // marco de la seleccion (control de consola)
+void PspSetFocus(bool on, int x, int y, int w, int h);
+void PspLogToggle();                  // registro de rendimiento (L + R + START)
+void PspLogScreen(const char* name);  // anota en el registro el cambio de pantalla   // marco de la seleccion (control de consola)
 #endif
 
 inline void PlatformGLInit()
