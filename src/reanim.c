@@ -143,7 +143,7 @@ void reanim_draw(ReAnim *a, float x, float y, float scale, u32 color) { reanim_d
 void reanim_draw_flip(ReAnim *a, float x, float y, float scale, int flipx, u32 color)
 {
     ReDef *d = a->def;
-    if (!d) return;
+    if (!d || (!d->block && !reanim_get(reanim_id(d)))) return;   /* liberada al cambiar de pantalla: se recarga */
     int f0 = (int)a->frame;
     float t = a->frame - f0;
     int f1 = f0 + 1;
@@ -182,6 +182,7 @@ void reanim_track_matrix(ReAnim *a, int track, float frame, float m[6])
 {
     ReDef *d = a->def;
     m[0] = 1; m[1] = 0; m[2] = 0; m[3] = 1; m[4] = 0; m[5] = 0;
+    if (d && !d->block && !reanim_get(reanim_id(d))) d = NULL;
     if (!d || track < 0 || track >= d->ntracks) return;
     int f0 = (int)frame;
     if (f0 < 0) f0 = 0;
@@ -220,7 +221,7 @@ void reanim_attach_matrix(ReAnim *a, int track, float m[6])
 void reanim_draw_m(ReAnim *a, float x, float y, float scale, const float *ov, u32 color)
 {
     ReDef *d = a->def;
-    if (!d) return;
+    if (!d || (!d->block && !reanim_get(reanim_id(d)))) return;   /* liberada al cambiar de pantalla: se recarga */
     int f0 = (int)a->frame;
     for (int tr = 0; tr < d->ntracks; tr++) {
         if (tr < 64 && (a->hide_mask[tr >> 5] & (1u << (tr & 31)))) continue;

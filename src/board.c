@@ -141,6 +141,7 @@ typedef struct {
     ReAnim head, head2;       /* plantas del PC con cabezas aparte (guisantralla): enganchadas al tallo */
 } Plant;
 static void splitpea_heads(Plant *p, float dt);
+static void gloom_anim(Plant *p, int shooting);
 enum { ZS_WALK, ZS_EAT, ZS_JUMP, ZS_SPECIAL, ZS_CLIMB, ZS_DYING, ZS_CHARRED };
 typedef struct {
     int alive, type, row, state, dir;
@@ -297,6 +298,17 @@ static void draw_parts(void)
     for (int i = 0; i < MAXPT; i++) {
         Part *p = &PT[i];
         if (!p->alive) continue;
+        if (p->sheet == PS_COFFEE) {             /* grano de cafe del PC (Coffeebean.reanim): 1 s en reposo y luego
+                                                  * anim_crumble a 22 fps, a 0.8 de tamano (Plant.cpp) */
+            static ReAnim ca;
+            if (!ca.def) reanim_play(&ca, RE_PC_COFFEEBEAN, PC_COFFEEBEAN_ANIM_IDLE_S, PC_COFFEEBEAN_ANIM_IDLE_E, 1);
+            ca.interp = 1;
+            if (p->age < 60) { ca.start = PC_COFFEEBEAN_ANIM_IDLE_S; ca.end = PC_COFFEEBEAN_ANIM_IDLE_E; ca.frame = ca.start + fmodf(p->age / 60 * 12, ca.end - ca.start); }
+            else { ca.start = PC_COFFEEBEAN_ANIM_CRUMBLE_S; ca.end = PC_COFFEEBEAN_ANIM_CRUMBLE_E; ca.frame = fminf(ca.end, ca.start + (p->age - 60) / 60 * 22); }
+            float base = p->y + G.rh * 0.38f - 3, k = 0.375f;
+            reanim_draw(&ca, sxw(p->x - 40 * k + 12 * k), syw(base - 80 * k + 10 * k), 0.8f * G.ws, WHITE);
+            continue;
+        }
         if (p->img >= 0) {
             float left = p->ttl - p->age;
             u32 col = left < 30 ? ((u32)(left * 255 / 30) << 24) | 0xFFFFFF : WHITE;
@@ -1064,6 +1076,7 @@ static void update_plant(Plant *p, int r, int c)
         const PlantDef *wd = pdef(p->type);
         if (wd->kind == PK_INSTANT) { reanim_play(&p->anim, wd->re, wd->act_s >= 0 ? wd->idle_s : 0, wd->act_e, 0); p->anim.speed = 2.0f; p->anim.hide_mask[0] = wd->hide; }
         else if (p->type != PL_GLOOM) plant_set_idle(p);
+        else gloom_anim(p, 0);
     }
     if (p->sleeping) return;
     switch (d->kind) {
@@ -1440,7 +1453,7 @@ static void update_plant(Plant *p, int r, int c)
             Zombie *z = &Z[i];
             if (z_hittable(z) && abs(z->row - r) <= 1 && fabsf(z->x - px) <= G.cw * 1.6f && !z->balloon && !z_submerged(z)) near = 1;
         }
-        if (p->state == 0 && near && p->timer <= 0) { p->state = 1; p->aux = 0; p->timer = d->rate; }
+        if (p->state == 0 && near && p->timer <= 0) { p->state = 1; p->aux = 0; p->timer = d->rate; gloom_anim(p, 1); }
         if (p->state == 1) {
             p->aux++;
             if (p->aux % 28 == 20) {             /* suelta el humo cuando los mofletes estan llenos */
@@ -1457,7 +1470,7 @@ static void update_plant(Plant *p, int r, int c)
                 }
                 if (p->aux < 28) sfx_play(SFX_FUME);
             }
-            if (p->aux >= 28 * 4) p->state = 0;
+            if (p->aux >= 28 * 4) { p->state = 0; gloom_anim(p, 0); }
         }
         break;
     }
@@ -1851,7 +1864,7 @@ static void plant_at(int r, int c, int t)
     if (t == PL_COFFEE) {                        /* el grano cae sobre la seta, se lo bebe y la despierta */
         Plant *m = &P[r][c][1];
         m->wake = 120;
-        part(PS_COFFEE, cell_x(c) + G.cw / 2, cy_c(r, c) + G.rh * 0.62f, 0, 0, 0, 150);
+        part(PS_COFFEE, cell_x(c) + G.cw / 2, cy_c(r, c) + G.rh * 0.62f, 0, 0, 0, 102);
         sfx_play(SFX_COFFEE);
         return;
     }
@@ -1872,6 +1885,7 @@ static void plant_at(int r, int c, int t)
         p->anim.speed = p->head.speed = p->head2.speed = rate;
         p->anim.frame += (rand() % 100) / 100.0f * (p->anim.end - p->anim.start);
     }
+    else if (t == PL_GLOOM) gloom_anim(p, 0);
     else if (t == PL_POTATOMINE) { p->timer = d->rate; reanim_play(&p->anim, RE_POTATOMINE, 0, 0, 1); }
     else if (d->kind == PK_INSTANT) { reanim_play(&p->anim, d->re, d->act_s >= 0 ? d->idle_s : 0, d->act_e, 0); p->anim.speed = t == PL_CHERRYBOMB ? 3.0f : 2.0f; }
     else if (t == PL_GRAVEBUSTER) reanim_play(&p->anim, RE_GRAVEBUSTER, 0, 9, 0);
@@ -2367,7 +2381,7 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_PLANTERN, PL_MELONPULT, PL_WINTERMELON, PL_GLOOM, PL_LILYPAD, PL_WALLNUT, PL_PEASHOOTER, PL_SQUASH };
         for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
-        plant_at(0, 4, PL_PLANTERN); plant_at(1, 1, PL_MELONPULT); plant_at(4, 1, PL_WINTERMELON); plant_at(5, 3, PL_GLOOM); P[5][3][1].sleeping = 0;
+        plant_at(0, 4, PL_PLANTERN); plant_at(1, 1, PL_MELONPULT); plant_at(4, 1, PL_WINTERMELON); plant_at(5, 3, PL_GLOOM); P[5][3][1].sleeping = 0; gloom_anim(&P[5][3][1], 0);
         plant_at(3, 4, PL_LILYPAD); plant_at(3, 4, PL_WALLNUT); plant_at(2, 0, PL_LILYPAD); plant_at(2, 0, PL_PEASHOOTER);
         plant_at(0, 2, PL_PEASHOOTER); plant_at(0, 3, PL_SQUASH);
         spawn_zombie(ZT_SNORKEL, 2, cell_x(8) + 10); spawn_zombie(ZT_DOLPHIN, 3, cell_x(9) + 10); spawn_zombie(ZT_NORMAL, 0, cell_x(8)); spawn_zombie(ZT_NORMAL, 5, cell_x(6));
@@ -2392,8 +2406,9 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 20 && !WHACK && !conveyor) {
         reanim_get(RE_PUFFSHROOM); reanim_get(RE_FUMESHROOM);
         plant_at(2, 3, PL_PUFFSHROOM); plant_at(3, 3, PL_FUMESHROOM); spawn_zombie(ZT_NORMAL, 2, cell_x(8));
+        plant_at(1, 3, PL_GLOOM); plant_at(0, 3, PL_GLOOM); spawn_zombie(ZT_NORMAL, 1, cell_x(6));
     }
-    if (state == ST_PLAY && state_timer == 60 && !WHACK && !conveyor) { plant_at(2, 3, PL_COFFEE); plant_at(3, 3, PL_COFFEE); }
+    if (state == ST_PLAY && state_timer == 60 && !WHACK && !conveyor) { plant_at(2, 3, PL_COFFEE); plant_at(3, 3, PL_COFFEE); plant_at(1, 3, PL_COFFEE); }
     if (state == ST_PLAY && WHACK && state_timer % 45 == 0) {
         Zombie *b = NULL;
         for (int i = 0; i < MAXZ; i++) if (z_hittable(&Z[i]) && Z[i].x < bush_x() && (!b || Z[i].x < b->x)) b = &Z[i];
@@ -2417,7 +2432,7 @@ int board_update(void)
     if (state == ST_PLAY && state_timer == 20) {
         static const int pl[] = { PL_GLOOM, PL_CACTUS, PL_COBCANNON, PL_GATLING };
         for (unsigned k = 0; k < sizeof(pl) / sizeof(pl[0]); k++) reanim_get(plant_defs[pl[k]].re);
-        plant_at(2, 4, PL_GLOOM); P[2][4][1].sleeping = 0; plant_at(1, 0, PL_CACTUS); plant_at(3, 0, PL_COBCANNON); P[3][0][1].timer = 50;
+        plant_at(2, 4, PL_GLOOM); P[2][4][1].sleeping = 0; gloom_anim(&P[2][4][1], 0); plant_at(1, 0, PL_CACTUS); plant_at(3, 0, PL_COBCANNON); P[3][0][1].timer = 50;
         plant_at(0, 0, PL_GATLING); plant_at(4, 2, PL_GLOOM);
         for (int r = 0; r < G.rows; r++) spawn_zombie(ZT_NORMAL, r, cell_x(8) + 10);
         spawn_zombie(ZT_CONE, 2, cell_x(7)); spawn_zombie(ZT_BALLOON, 1, cell_x(8));
@@ -2509,7 +2524,7 @@ int board_update(void)
         reward_alive = 0; sfx_play(SFX_SEEDLIFT); return BR_WON;
     }
     float dt = 1.0f / 60.0f;
-    for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) for (int l = 0; l < 3; l++) if (P[r][c][l].alive) reanim_update(&P[r][c][l].anim, P[r][c][l].anim.def && P[r][c][l].anim.def->fps >= 12 && P[r][c][l].type >= PL_J2ME_COUNT && P[r][c][l].type != PL_SPLITPEA ? dt * 0.5f : dt);
+    for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) for (int l = 0; l < 3; l++) if (P[r][c][l].alive) reanim_update(&P[r][c][l].anim, P[r][c][l].anim.def && P[r][c][l].anim.def->fps >= 12 && P[r][c][l].type >= PL_J2ME_COUNT && P[r][c][l].type != PL_SPLITPEA && P[r][c][l].type != PL_GLOOM ? dt * 0.5f : dt);
     for (int r = 0; r < G.rows; r++) for (int c = 0; c < COLS; c++) {
         Plant *p = &P[r][c][1];
         if (p->alive && p->type == PL_SPLITPEA) splitpea_heads(p, dt);
@@ -2549,34 +2564,6 @@ static void draw_anim_at(ReAnim *a, float cx, float bottom, u32 col, int flip)
     else reanim_draw(a, sxw(ox), syw(oy), G.ws, col);
 }
 
-/* seta melancolica: piezas de la DS (1460..1473): cuerpo verde, bocas de tubo alrededor, cabeza que respira,
- * parpadea, duerme de dia y infla los mofletes al echar humo */
-static void draw_gloom(Plant *p, float cx, float base, u32 col)
-{
-    /* seta melancolica armada con las piezas de la DS como la del PC: 1475 = cuerpo + 8 tubos (centro de la
-     * cabeza en 21.4,21.0), encima la cabeza 1460 o sus variantes al soltar humo y los parpados */
-    enum { G_HEAD = 1460, G_PUFF1, G_PUFF2, G_LID_HALF, G_LID_SHUT, G_BASE = 1475 };
-    const float k = 0.8f;                         /* del tamano de las demas plantas */
-    float bw = img_w(G_BASE), bh = img_h(G_BASE);
-    float breath = 1 + 0.03f * sinf(frame * 0.07f + cx * 0.1f);
-    float top = base + 2 - bh * k;
-    float hx = cx + (21.4f - bw / 2) * k, hy = top + 21.0f * k * breath;
-    float hw = img_w(G_HEAD) * k;
-    int head = G_HEAD; float hs = 1;
-    if (p->state == 1 && !p->sleeping) {
-        int ph = p->aux % 28;
-        if (ph >= 8 && ph < 16) { head = G_PUFF1; hs = 1.08f; } else if (ph >= 16 && ph < 22) { head = G_PUFF2; hs = 1.12f; }
-    }
-    gfx_draw_ex(G_BASE, sxw(cx), syw(base + 2), bw / 2, bh, k * hs * G.ws, k * (2 - breath) * G.ws, 0, col, 0);
-    float sw = head == G_HEAD ? k : hw / img_w(head) * 1.0f;
-    gfx_draw_ex(head, sxw(hx), syw(hy), img_w(head) / 2.0f, img_h(head) / 2.0f, sw * hs * G.ws, sw * hs * breath * G.ws, 0, col, 0);
-    if (head == G_HEAD) {                         /* parpados: dormida (de dia) o parpadeo de vez en cuando */
-        int lid = p->sleeping ? G_LID_SHUT : ((frame + (int)cx * 7) % 260 < 10 ? G_LID_HALF : 0);
-        float hh = img_h(G_HEAD) * k;
-        if (lid) gfx_draw_ex(lid, sxw(hx), syw(hy - hh * 0.16f), img_w(lid) / 2.0f, img_h(lid) / 2.0f, hw * 0.78f / img_w(lid) * G.ws, k * G.ws, 0, col, 0);
-    }
-}
-
 /* guisantralla con la animacion del PC (SplitPea.reanim): el tallo hace anim_idle y las dos cabezas van
  * enganchadas a su pista anim_idle (se balancean con el); al disparar, cada cabeza hace su animacion de disparo */
 static void splitpea_heads(Plant *p, float dt)
@@ -2608,6 +2595,36 @@ static void splitpea_heads(Plant *p, float dt)
  * (80x100, la planta apoyada a unos 80 px); aqui (cx, base) = centro abajo de la casilla del J2ME */
 #define PC_SC 0.375f
 static void pc_plant_origin(float cx, float base, float *ox, float *oy) { *ox = cx - 40 * PC_SC; *oy = base - 80 * PC_SC; }
+
+/* seta melancolica con la animacion del PC (GloomShroom.reanim): anim_idle, anim_sleep de dia y anim_shooting
+ * mientras suelta el humo (las 4 bocanadas de 28 ticks caben en una pasada de la animacion) */
+static void gloom_anim(Plant *p, int shooting)
+{
+    if (shooting) {
+        reanim_play(&p->anim, RE_PC_GLOOMSHROOM, PC_GLOOMSHROOM_ANIM_SHOOTING_S, PC_GLOOMSHROOM_ANIM_SHOOTING_E, 0);
+        p->anim.speed = (PC_GLOOMSHROOM_ANIM_SHOOTING_E - PC_GLOOMSHROOM_ANIM_SHOOTING_S + 1) / (28 * 4 / 60.0f) / 12.0f;
+    } else if (p->sleeping) {
+        reanim_play(&p->anim, RE_PC_GLOOMSHROOM, PC_GLOOMSHROOM_ANIM_SLEEP_S, PC_GLOOMSHROOM_ANIM_SLEEP_E, 1);
+        p->anim.speed = rnd(6, 8) / 12.0f;
+    } else {
+        reanim_play(&p->anim, RE_PC_GLOOMSHROOM, PC_GLOOMSHROOM_ANIM_IDLE_S, PC_GLOOMSHROOM_ANIM_IDLE_E, 1);
+        p->anim.speed = rnd(10, 15) / 12.0f;
+        p->anim.frame += (rand() % 100) / 100.0f * (p->anim.end - p->anim.start);
+    }
+    p->anim.interp = 1;
+}
+
+static void draw_gloom(Plant *p, float cx, float base, u32 col)
+{
+    float ox, oy;
+    pc_plant_origin(cx, base, &ox, &oy);
+    if (!p->anim.def) {                          /* fantasma del cursor */
+        static Plant g;
+        if (!g.anim.def) gloom_anim(&g, 0);
+        p = &g;
+    }
+    reanim_draw(&p->anim, sxw(ox), syw(oy), G.ws, col);
+}
 
 static void draw_splitpea(Plant *p, float cx, float base, u32 col)
 {
